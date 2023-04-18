@@ -1,0 +1,40 @@
+{
+    "eps": 0.0001,
+    "verbose": 0,
+    "verboseMultiHorizon": 1,
+    "verboseEssential": 0,
+    "scoreFunction": "worstLowerBound",
+    "virtualBranching": false,
+    "numberOfVirtualBranches": 4,
+    "maxSearchDepthLipschitzBound": 10,
+    "normToUseLipschitz": 2,
+    "useTwoNormDilation": false,
+    "useSdpForLipschitzCalculation": true,
+    "lipschitzSdpSolverVerbose": false,
+    "finalHorizon": 1,
+    "initialGD": false,
+    "performMultiStepSingleHorizon": false,
+    "plotProjectionsOfHigherDims": true,
+    "onlyPcaDirections": false,
+    "fullLoop": false,
+    "spaceOutThreshold": 40000,
+    "nodeBranchingFactor": 2,
+    "branchNodeNum": 512,
+    "pgdIterNum": 0,
+    "pgdNumberOfInitializations": 1,
+    "pgdStepSize": 0.5,
+    "A": null,
+    "B": null,
+    "c": null,
+    "lowerCoordinate": [
+        1.0471975803375244,
+        1.0471975803375244
+    ],
+    "upperCoordinate": [
+        2.094395160675049,
+        2.094395160675049
+    ],
+    "pathToStateDictionary": "Networks/RobotArmSoftplus.pth",
+    "activation": "softplus",
+    "boundingMethod": "firstOrder"
+}

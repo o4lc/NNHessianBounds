@@ -7,6 +7,9 @@ from copy import deepcopy
 import cvxpy as cp
 from scipy.linalg import block_diag
 
+from Bounding.Utils4Curvature import power_iteration
+from torch.autograd.functional import jacobian
+
 
 
 class LipschitzBounding:
@@ -22,7 +25,9 @@ class LipschitzBounding:
                  sdpSolverVerbose=False,
                  calculatedLipschitzConstants=[],
                  originalNetwork=None,
-                 horizon=1):
+                 horizon=1, 
+                 activation='softplus',
+                 boundingMethod='firstOrder'):
         self.network = network
         self.device = device
         if originalNetwork:
@@ -40,7 +45,48 @@ class LipschitzBounding:
             assert (not(self.useSdpForLipschitzCalculation and self.useTwoNormDilation))
         self.sdpSolverVerbose = sdpSolverVerbose
         self.horizon = horizon
+        self.activation = activation
+        self.boundingMethod = boundingMethod
+        self.calculatedCurvatureConstants = []
 
+    def calculateCurvatureConstant(self,
+                                   queryCoefficient: torch.Tensor,
+                                   ):
+        if self.network.activation == 'softplus':
+            g = 1.
+            h = 0.25
+        elif self.network.activation == 'sigmoid':
+            g = 0.25
+            h = 0.09623
+        elif self.network.activation == 'tanh':
+            g = 1.
+            h = 0.7699
+        with torch.no_grad():
+            # if model.num_layers == 2:
+                params = list(self.network.parameters())
+                W1 = params[0]
+                W2 = params[2]
+
+                W2_eff = queryCoefficient @ self.network.B.cpu() @ W2
+
+                if self.network.activation == 'softplus':
+                    W2_pos = ((W2_eff > 0).float()*W2_eff)
+                    W2_neg = ((W2_eff < 0).float()*W2_eff)
+                elif (self.network.activation == 'sigmoid') or (self.network.activation == 'tanh'):
+                    W2_pos = torch.abs(W2_eff)
+                    W2_neg = -torch.abs(W2_eff)
+
+                # Check if W2_pos and W2_neg are both zero, set m and M to zero
+                # This should be considered
+                if torch.all(W2_pos == 0) and torch.all(W2_neg == 0):
+                    m = torch.Tensor([0]).to(self.device)
+                    M = torch.Tensor([0]).to(self.device)
+                else:
+                    m = h*power_iteration(W1, W2_neg)
+                    M = h*power_iteration(W1, W2_pos)
+        
+        return m[0], M[0]
+    
     def calculateLipschitzConstant(self,
                                    queryCoefficient: torch.Tensor,
                                    inputLowerBound: torch.Tensor,
@@ -49,7 +95,12 @@ class LipschitzBounding:
 
         if (self.normToUse == 2 and not self.useTwoNormDilation) or self.normToUse == 1:
             if self.useSdpForLipschitzCalculation and self.normToUse == 2:
-                alpha, beta = self.calculateMinMaxSlopes(inputLowerBound, inputUpperBound)
+                alpha, beta = self.calculateMinMaxSlopes(inputLowerBound, inputUpperBound, self.activation)
+
+                # print(self.network)
+                # print(queryCoefficient.unsqueeze(0).cpu().numpy())
+                # print(self.network.A.cpu().numpy(), self.network.B.cpu().numpy())
+                # raise
                 if self.horizon == 1:
                     lipschitzConstant = torch.Tensor([lipSDP(self.weights, alpha, beta,
                                                              queryCoefficient.unsqueeze(0).cpu().numpy(),
@@ -83,19 +134,28 @@ class LipschitzBounding:
                    virtualBranch=True,
                    timer=None,
                    extractedLipschitzConstants=None):
+        
         if virtualBranch and self.performVirtualBranching:
             virtualBranchLowerBounds = \
                 self.handleVirtualBranching(inputLowerBound, inputUpperBound,
                                             queryCoefficient, extractedLipschitzConstants, timer)
 
-        additiveTerm = self.calculateAdditiveTerm(inputLowerBound, inputUpperBound, queryCoefficient,
-                                                  extractedLipschitzConstants, timer)
+        if self.boundingMethod == 'firstOrder':
+            additiveTerm = self.calculateAdditiveTerm(inputLowerBound, inputUpperBound, queryCoefficient,
+                                                    extractedLipschitzConstants, timer)
 
-        centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
-        with torch.no_grad():
-            self.startTime(timer, "lowerBound:lipschitzForwardPass")
-            lowerBound = self.network(centerPoint) @ queryCoefficient - additiveTerm
-            self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
+            centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
+            with torch.no_grad():
+                self.startTime(timer, "lowerBound:lipschitzForwardPass")
+                lowerBound = self.network(centerPoint) @ queryCoefficient - additiveTerm
+                self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
+        elif self.boundingMethod == 'secondOrder':
+            additiveTerm1, additiveTerm2 = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, queryCoefficient)
+            centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
+            with torch.no_grad():
+                self.startTime(timer, "lowerBound:lipschitzForwardPass")
+                lowerBound = self.network(centerPoint) @ queryCoefficient - additiveTerm1 - additiveTerm2
+                self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
 
         if virtualBranch and self.performVirtualBranching:
             lowerBound = torch.maximum(lowerBound, virtualBranchLowerBounds)
@@ -139,6 +199,37 @@ class LipschitzBounding:
             for i in range(0, batchSize)]).to(self.device)
         self.pauseTime(timer, "lowerBound:virtualBranchMin")
         return virtualBranchLowerBounds
+
+    def calculateAdditiveTermSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient):
+        def J_c(x):
+            return self.network(x) @ queryCoefficient
+        
+        if self.network.activation == 'softplus':
+            g = 1.
+            h = 0.25
+        elif self.network.activation == 'sigmoid':
+            g = 0.25
+            h = 0.09623
+        elif self.network.activation == 'tanh':
+            g = 1.
+            h = 0.7699
+
+        params = list(self.network.parameters())
+        W1 = params[0].data
+        W2 = params[2].data
+
+        x_center = (inputLowerBound + inputUpperBound) / 2.0
+        if self.calculatedCurvatureConstants == []:
+            m, M = self.calculateCurvatureConstant(queryCoefficient)
+            self.calculatedCurvatureConstants.append(torch.maximum(m, M))
+            self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
+
+        # because it takes the jacobian w.r.t all input output pairs
+        grad_x = torch.sum(jacobian(J_c, (x_center)), axis=1).reshape(x_center.shape)
+        dialation = (inputUpperBound - inputLowerBound)/2
+        dialation2 = dialation * torch.sign(grad_x)
+
+        return torch.sum(grad_x * dialation2, axis=1), self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2
 
     def calculateAdditiveTerm(self, inputLowerBound, inputUpperBound, queryCoefficient,
                               extractedLipschitzConstants,
@@ -350,19 +441,23 @@ class LipschitzBounding:
             t.append(tTemp)
         return s, t
 
-    def calculateMinMaxSlopes(self, inputLowerBound, inputUpperBound):
+    def calculateMinMaxSlopes(self, inputLowerBound, inputUpperBound, activation):
         numberOfNeurons = sum([self.weights[i].shape[0] for i in range(len(self.weights) - 1)])
-        alpha = np.zeros((numberOfNeurons, 1))
-        beta = np.ones((numberOfNeurons, 1))
+        if activation == 'softplus' or activation == 'tanh':
+            alpha = np.zeros((numberOfNeurons, 1))
+            beta = np.ones((numberOfNeurons, 1))
+        elif activation == 'sigmoid':
+            alpha = np.zeros((numberOfNeurons, 1))
+            beta = 0.25 * np.ones((numberOfNeurons, 1))
 
         assert inputLowerBound.shape[0] == 1
-        lowerBounds, upperBounds = self.propagateBoundsInNetwork(inputLowerBound[0, :].cpu().numpy(),
-                                                                 inputUpperBound[0, :].cpu().numpy(),
-                                                                 self.weights, self.biases)
-        lowerBounds = np.hstack(lowerBounds[1:-1]).T
-        upperBounds = np.hstack(upperBounds[1:-1]).T
-        alpha[lowerBounds >= 0] = 1
-        beta[upperBounds <= 0] = 0
+        # lowerBounds, upperBounds = self.propagateBoundsInNetwork(inputLowerBound[0, :].cpu().numpy(),
+        #                                                          inputUpperBound[0, :].cpu().numpy(),
+        #                                                          self.weights, self.biases)
+        # lowerBounds = np.hstack(lowerBounds[1:-1]).T
+        # upperBounds = np.hstack(upperBounds[1:-1]).T
+        # alpha[lowerBounds >= 0] = 1
+        # beta[upperBounds <= 0] = 0
         return alpha, beta
 
 
@@ -380,7 +475,6 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
     if Asys is None:
         Asys = np.zeros((dim_in, dim_in))
         Bsys = np.eye(dim_in)
-
     # decision vars
     Lambda = cp.Variable((num_neurons, 1), nonneg=True)
     T = cp.diag(Lambda)
@@ -393,8 +487,10 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
     # print(Bsys.shape, weights[-1].shape, El.shape)
     Asys = coef @ Asys
     Bsys = coef @ Bsys
+    # print(Asys.shape, Bsys.shape)
+    # print((Asys @ E0).shape, (Bsys).shape, (weights[-1] @ El).shape)
+    # print('--')
     Cnew = Asys @ E0 + Bsys @ weights[-1] @ El
-
     C = Cnew
 
     D = np.bmat([np.eye(dim_in), np.zeros((dim_in, num_neurons))])

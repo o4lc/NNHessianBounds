@@ -59,7 +59,8 @@ def calculateDirectionsOfHigherDimProjections(currentPcaDirections, imageData):
 
 def solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
                                 plottingConstants, calculatedLowerBoundsforpcaDirections,
-                                originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate):
+                                originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate,
+                                boundingMethod):
     eps = config['eps']
     verbose = config['verbose']
     verboseEssential = config['verboseEssential']
@@ -106,7 +107,8 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
                             originalNetwork=originalNetwork,
                             horizonForLipschitz=horizonForLipschitz,
                             initialBub=initialBub,
-                            spaceOutThreshold=spaceOutThreshold
+                            spaceOutThreshold=spaceOutThreshold,
+                            boundingMethod=boundingMethod,
                             )
         lowerBound, upperBound, space_left = BB.run()
         plottingConstants[i] = -lowerBound
@@ -118,9 +120,10 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
     return totalNumberOfBranches
 
 
-def main():
+def main(Method = None):
     configFolder = "Config/"
-    fileName = "doubleIntegrator"
+    # fileName = "RobotArmS"
+    fileName = "test"
     configFileToLoad = configFolder + fileName + ".json"
 
     with open(configFileToLoad, 'r') as file:
@@ -136,6 +139,14 @@ def main():
     onlyPcaDirections = config['onlyPcaDirections']
     pathToStateDictionary = config['pathToStateDictionary']
     fullLoop = config['fullLoop']
+    try:
+        activation = config['activation']
+    except:
+        activation = 'relu'
+    if Method == None:
+        boundingMethod = config['boundingMethod']
+    else:
+        boundingMethod = Method
     if config['A'] and not fullLoop:
         A = torch.Tensor(config['A'])
         B = torch.Tensor(config['B'])
@@ -157,15 +168,18 @@ def main():
     else:
         device = torch.device("cpu")
 
-    # Temporary
-    device = torch.device("cpu")
+
     print(device)
     print(' ')
-
+    
     lowerCoordinate = lowerCoordinate.to(device)
     upperCoordinate = upperCoordinate.to(device)
 
-    network = NeuralNetwork(pathToStateDictionary, A, B, c)
+    network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True)
+    # print(network)
+    # torch.save(network.state_dict(), 'Networks/test_doubleIntergrator.pth')
+    # raise
+
     horizonForLipschitz = 1
     originalNetwork = None
     if performMultiStepSingleHorizon:
@@ -218,7 +232,7 @@ def main():
 
         t1 = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
-                                    originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate)
+                                    originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod)
         totalNumberOfBranches += t1
 
         if finalHorizon > 1:
@@ -256,41 +270,7 @@ def main():
             plt.xlabel('$x_0$')
             plt.ylabel('$x_1$')
 
-    if verboseMultiHorizon:
-        if "doubleintegrator" in configFileToLoad.lower():
-            reachlp = np.array([
-                # [[2.5, 3], [-0.25, 0.25]],
-            [[ 1.90837383, 2.75 ],
-            [-1.125, -0.70422709]],
-
-            [[1.0081799, 1.8305043],
-            [-1.10589671, -0.80364925]],
-
-            [[ 0.33328745,  0.94537741],
-            [-0.76938218, -0.41314635]],
-
-            [[-0.06750171, 0.46302059],
-            [-0.47266394, -0.07047667]],
-
-            [[-0.32873616,  0.38155359],
-            [-0.30535603,  0.09282264]]
-            ])
-            plottingData["reachlp"] = reachlp
-            for i in range(min(finalHorizon, len(reachlp))):
-                currHorizon = reachlp[i]
-                rectangle = patches.Rectangle((currHorizon[0][0], currHorizon[1][0]),
-                                currHorizon[0][1] - currHorizon[0][0],
-                                currHorizon[1][1] - currHorizon[1][0],
-                                edgecolor='b', facecolor='none', linewidth=2, alpha=1)
-                x = ax.add_patch(rectangle)
-
-            custom_lines = [Line2D([0], [0], color='b', lw=2),
-                                Line2D([0], [0], color='red', lw=2, linestyle='--')]
-            ax.legend(custom_lines, ['ReachLP', 'ReachLipSDP'], loc=4)
-            
-
-        plt.savefig("reachabilityPics/" + fileName + "Iteration" + str(iteration) + ".png")
-
+    
     endTime = time.time()
 
     print('The algorithm took (s):', endTime - startTime, 'with eps =', eps)
@@ -300,14 +280,15 @@ def main():
 
 
 if __name__ == '__main__':
-    runTimes = []
-    numberOfBrancehs = []
-    for i in range(1):
-        t1, t2 = main()
-        runTimes.append(t1)
-        numberOfBrancehs.append(t2)
-    print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
-    print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)))
-    
-
+    for Method in [ 'secondOrder']:
+        runTimes = []
+        numberOfBrancehs = []
+        for i in range(1):
+            t1, t2 = main(Method)
+            runTimes.append(t1)
+            numberOfBrancehs.append(t2)
+        print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
+        print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)))
+        plt.title(Method)
+        
     plt.show()

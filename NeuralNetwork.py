@@ -2,21 +2,38 @@ from packages import *
 
 
 class NeuralNetwork(nn.Module):
-    def __init__(self, path, A=None, B=None, c=None):
+    def __init__(self, path, A=None, B=None, c=None, activation='softplus', loadOrGenerate=True):
         super().__init__()
-        stateDictionary = torch.load(path, map_location=torch.device("cpu"))
-        layers = []
-        for keyEntry in stateDictionary:
-            if "weight" in keyEntry:
-                layers.append(nn.Linear(stateDictionary[keyEntry].shape[1], stateDictionary[keyEntry].shape[0]))
-                layers.append(nn.ReLU())
-        layers.pop()
-        self.Linear = nn.Sequential(
-            *layers
-        )
-        self.rotation = nn.Identity()
-        self.load_state_dict(stateDictionary)
+        self.activation = activation
+        if activation == 'softplus':
+            activationF = nn.Softplus()
+        elif activation == 'sigmoid':
+            activationF = nn.Sigmoid()
+        elif activation == 'tanh':
+            activationF = nn.Tanh()
+        else:
+            activationF = nn.ReLU()
+
+        if loadOrGenerate:
+            stateDictionary = torch.load(path, map_location=torch.device("cpu"))
+            layers = []
+            for keyEntry in stateDictionary:
+                if "weight" in keyEntry:
+                    layers.append(nn.Linear(stateDictionary[keyEntry].shape[1], stateDictionary[keyEntry].shape[0]))
+                    layers.append(activationF)
+            layers.pop()
+            self.Linear = nn.Sequential(
+                *layers
+            )
+            self.load_state_dict(stateDictionary)
+
+        else:
+            self.Linear = nn.Sequential(
+                            nn.Linear(2, 50),
+                            activationF,
+                            nn.Linear(50, 1))
         
+        self.rotation = nn.Identity()
         self.A = A
         self.B = B
         self.c = c
@@ -39,3 +56,5 @@ class NeuralNetwork(nn.Module):
         for i in range(self.repetition):
             x = x @ self.A.T + self.Linear(x) @ self.B.T + self.c
         return x
+
+

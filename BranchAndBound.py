@@ -20,7 +20,8 @@ class BranchAndBound:
                  horizonForLipschitz=1,
                  initialBub=None,
                  initialBubPoint=None,
-                 spaceOutThreshold=10000
+                 spaceOutThreshold=10000,
+                 boundingMethod='firstOrder'
                  ):
 
         self.lowerBoundClass = LipschitzBounding(network, device, virtualBranching, maxSearchDepthLipschitzBound,
@@ -28,7 +29,8 @@ class BranchAndBound:
                                                  numberOfVirtualBranches, lipschitzSdpSolverVerbose,
                                                  previousLipschitzCalculations,
                                                  originalNetwork=originalNetwork,
-                                                 horizon=horizonForLipschitz
+                                                 horizon=horizonForLipschitz,
+                                                 boundingMethod=boundingMethod
                                                  )
         self.queryCoefficient = queryCoefficient
         self.calculateLipschitzBeforeNodeCreation = not (normToUseLipschitz == float("inf")
@@ -78,15 +80,15 @@ class BranchAndBound:
 
     def prune(self):
         for i in range(len(self.spaceNodes) - 1, -1, -1):
-            if self.spaceNodes[i].lower > self.bestUpperBound:
+            if self.spaceNodes[i].lower > self.bestUpperBound and len(self.spaceNodes) > 1:
                 self.spaceNodes.pop(i)
+
 
     def lowerBound(self, indices):
         lowerBounds = torch.vstack([self.spaceNodes[index].coordLower for index in indices])
         upperBounds = torch.vstack([self.spaceNodes[index].coordUpper for index in indices])
         lipschitzConstants = None
         if self.calculateLipschitzBeforeNodeCreation:
-
             lipschitzConstants = torch.hstack([self.spaceNodes[index].lipschitzConstant for index in indices])
 
         return self.lowerBoundClass.lowerBound(self.queryCoefficient, lowerBounds, upperBounds, timer=self.timers,
@@ -243,7 +245,6 @@ class BranchAndBound:
                 print('Best LB', self.bestLowerBound, 'Best UB', self.bestUpperBound)
                 plotter.plotSpace(self.spaceNodes, self.initCoordLow, self.initCoordUp)
                 print('----------' * 10)
-
         if self.verbose:
             print("Number of created nodes: {}".format(self.numberOfBranches))
             plotter.showAnimation(self.spaceNodes, self.currDim)
