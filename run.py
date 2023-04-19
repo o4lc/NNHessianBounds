@@ -153,8 +153,13 @@ def main(Method = None):
         c = torch.Tensor(config['c'])
     else:
         A = B = c = None
-    lowerCoordinate = torch.Tensor(config['lowerCoordinate'])
-    upperCoordinate = torch.Tensor(config['upperCoordinate'])
+    try:
+        lowerCoordinate = torch.Tensor(config['lowerCoordinate'])
+        upperCoordinate = torch.Tensor(config['upperCoordinate'])
+    except:
+        lowerCoordinate = torch.zeros((784, ))
+        upperCoordinate = torch.ones((784, )) / 10000 + lowerCoordinate
+
 
     if not verboseMultiHorizon:
         plotProjectionsOfHigherDims = False
@@ -177,7 +182,7 @@ def main(Method = None):
 
     network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True)
     # print(network)
-    # torch.save(network.state_dict(), 'Networks/test_doubleIntergrator.pth')
+    # torch.save(network.state_dict(), 'Networks/MnistTanh.pth')
     # raise
 
     horizonForLipschitz = 1
@@ -280,7 +285,7 @@ def main(Method = None):
 
 
 if __name__ == '__main__':
-    for Method in [ 'secondOrder']:
+    for Method in ['secondOrder']:
         runTimes = []
         numberOfBrancehs = []
         for i in range(1):

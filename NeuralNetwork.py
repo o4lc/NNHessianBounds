@@ -29,9 +29,9 @@ class NeuralNetwork(nn.Module):
 
         else:
             self.Linear = nn.Sequential(
-                            nn.Linear(2, 50),
+                            nn.Linear(784, 100),
                             activationF,
-                            nn.Linear(50, 1))
+                            nn.Linear(100, 10))
         
         self.rotation = nn.Identity()
         self.A = A
@@ -39,8 +39,9 @@ class NeuralNetwork(nn.Module):
         self.c = c
         if self.A is None:
             dimInp = self.Linear[0].weight.shape[1]
+            dimOut = self.Linear[-1].weight.shape[0]
             self.A = torch.zeros((dimInp, dimInp)).float()
-            self.B = torch.eye((dimInp)).float()
+            self.B = torch.eye(dimInp, dimOut).float()
             self.c = torch.zeros(dimInp).float()
         self.repetition = 1
 

@@ -1,0 +1,8 @@
+# ignore ALL .log files
+*.log
+
+# ignore ALL .log files
+./Utilities/Output/
+
+# ignore ALL files in ANY directory named __PYCACHE__
+__pycache__/

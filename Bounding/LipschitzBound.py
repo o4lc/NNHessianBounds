@@ -84,6 +84,8 @@ class LipschitzBounding:
                 else:
                     m = h*power_iteration(W1, W2_neg)
                     M = h*power_iteration(W1, W2_pos)
+
+                print('m: ', m)
         
         return m[0], M[0]
     
