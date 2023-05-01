@@ -7,7 +7,7 @@ from copy import deepcopy
 import cvxpy as cp
 from scipy.linalg import block_diag
 
-from Bounding.Utils4Curvature import power_iteration
+from Bounding.Utils4Curvature import power_iteration, MatrixNorm
 from torch.autograd.functional import jacobian
 
 
@@ -62,8 +62,8 @@ class LipschitzBounding:
             g = 1.
             h = 0.7699
         with torch.no_grad():
-            # if model.num_layers == 2:
-                params = list(self.network.parameters())
+            params = list(self.network.Linear.parameters()) 
+            if len(params) == 4:
                 W1 = params[0]
                 W2 = params[2]
 
@@ -82,11 +82,88 @@ class LipschitzBounding:
                     m = torch.Tensor([0]).to(self.device)
                     M = torch.Tensor([0]).to(self.device)
                 else:
+                    # print(W2_pos, W2_neg)
                     m = h*power_iteration(W1, W2_neg)
                     M = h*power_iteration(W1, W2_pos)
 
-                print('m: ', m)
+            elif len(params) == 6:
+                W1 = params[0]
+                W2 = params[2]
+                W3 = params[4]
+
+                W3_eff = queryCoefficient @ self.network.B.cpu() @ W3
+
+                W1_sigma = MatrixNorm.apply(W1)*g
+                if self.network.activation == 'softplus':
+                    left_m = power_iteration(W2, W3_eff*(W3_eff<0).float())*W1_sigma*W1_sigma
+                    left_M = power_iteration(W2, W3_eff*(W3_eff>0).float())*W1_sigma*W1_sigma
+                elif (self.network.activation == 'sigmoid') or (self.network.activation == 'tanh'):
+                    W3_diag = torch.abs(W3_eff)
+                    left_m = power_iteration(W2, W3_diag)*W1_sigma*W1_sigma
+                    left_M = left_m.clone()
+
+                W2_tensor = g*W3_eff.unsqueeze(1)*W2.unsqueeze(0)
+                W2_neg = ((W2_tensor < 0).float()*W2_tensor).sum(1)
+                W2_pos = ((W2_tensor > 0).float()*W2_tensor).sum(1)
+                W2_diag = torch.max(W2_neg.abs(), W2_pos.abs())
+
+                if torch.all(W2_pos == 0) and torch.all(W2_neg == 0):
+                    m = torch.Tensor([0]).to(self.device)
+                    M = torch.Tensor([0]).to(self.device)
+                else:
+                    if self.network.activation == 'softplus':
+                        right_m = power_iteration(W1, W2_neg)
+                        right_M = power_iteration(W1, W2_pos)
+                    elif (self.network.activation == 'sigmoid') or (self.network.activation == 'tanh'):
+                        right_m = power_iteration(W1, W2_diag)
+                        right_M = right_m.clone()
+
+                    m = h*(left_m + right_m)
+                    M = h*(left_M + right_M)
+
+            elif len(params) == 8:
+                W1 = params[0]
+                W2 = params[2]
+                W3 = params[4]
+                W4 = params[6]
+
+                W4_eff = queryCoefficient @ self.network.B.cpu() @ W4
         
+                W3_tensor = g*W4_eff.unsqueeze(1)*W3.unsqueeze(0)
+                W3_neg = ((W3_tensor < 0).float()*W3_tensor).sum(1)
+                W3_pos = ((W3_tensor > 0).float()*W3_tensor).sum(1)
+                W3_diag = torch.max(W3_neg.abs(), W3_pos.abs())
+                W2_diag = g*(W3_diag.mm(torch.abs(W2)))
+
+                if torch.all(W3_pos == 0) and torch.all(W3_neg == 0):
+                    m = torch.Tensor([0]).to(self.device)
+                    M = torch.Tensor([0]).to(self.device)
+
+                else:
+                    left_m = power_iteration(W1, W2_diag)
+                    left_M = left_m.clone()
+            
+                    W1_sigma = MatrixNorm.apply(W1)*g
+                    if self.network.activation == 'softplus':
+                        middle_m = power_iteration(W2, W3_neg)*W1_sigma*W1_sigma
+                        middle_M = power_iteration(W2, W3_pos)*W1_sigma*W1_sigma
+                    elif (self.network.activation == 'sigmoid') or (self.network.activation == 'tanh'):
+                        middle_m = power_iteration(W2, W3_diag)*W1_sigma*W1_sigma
+                        middle_M = middle_m.clone()
+            
+                    W1_W2_sigma = W1_sigma*MatrixNorm.apply(W2)*g
+                    if self.network.activation == 'softplus':
+                        right_m = power_iteration(W3, W4_eff*(W4_eff<0).float())*W1_W2_sigma*W1_W2_sigma
+                        right_M = power_iteration(W3, W4_eff*(W4_eff>0).float())*W1_W2_sigma*W1_W2_sigma
+                    elif (self.network.activation == 'sigmoid') or (self.network.activation == 'tanh'):
+                        W4_diag = torch.abs(W4_eff)
+                        right_m = power_iteration(W3, W4_diag)*W1_W2_sigma*W1_W2_sigma
+                        right_M = right_m.clone()
+            
+                    m = h*(left_m + middle_m + right_m)
+                    M = h*(left_M + middle_M + right_M)
+
+        # print('M', M)
         return m[0], M[0]
     
     def calculateLipschitzConstant(self,

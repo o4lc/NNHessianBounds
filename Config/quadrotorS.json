@@ -1,7 +1,7 @@
 {
-    "eps": 0.01,
+    "eps": 0.1,
     "verbose": 0,
-    "verboseMultiHorizon": 0,
+    "verboseMultiHorizon": 1,
     "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
     "virtualBranching": true,
@@ -11,7 +11,7 @@
     "useTwoNormDilation": false,
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
-    "finalHorizon": 3,
+    "finalHorizon": 12,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
     "plotProjectionsOfHigherDims": true,
@@ -129,7 +129,7 @@
         0.00010000000474974513,
         0.00010000000474974513
     ],
-    "pathToStateDictionary": "./Networks/quadrotor.pth",
+    "pathToStateDictionary": "./Networks/quadrotorTanh.pth",
     "activation": "tanh",
     "boundingMethod": "firstOrder"
 }

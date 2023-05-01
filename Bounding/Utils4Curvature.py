@@ -9,56 +9,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 
-# class Net(nn.Module):
-#     def __init__(self, num_layers, nonlin='softplus', input_shape=(1, 784), output_shape=(1, 10)):
-#         super(Net, self).__init__()
-#         self.num_classes = 10
-#         self.num_layers = num_layers
-#         self.input_shape = input_shape
-#         self.output_shape = output_shape
-#         self.nonlin = nonlin
-#         if num_layers == 2:
-#             # self.fc1 = nn.Linear(784, 1024)
-#             # self.fc2 = nn.Linear(1024, 10)
-#             self.fc1 = nn.Linear(input_shape[1], 100)
-#             self.fc2 = nn.Linear(100, output_shape[1])
-#         elif num_layers == 3:
-#             self.fc1 = nn.Linear(784, 1024)
-#             self.fc2 = nn.Linear(1024, 1024)
-#             self.fc3 = nn.Linear(1024, 10)
-#         elif num_layers == 4:
-#             self.fc1 = nn.Linear(784, 1024)
-#             self.fc2 = nn.Linear(1024, 1024)
-#             self.fc3 = nn.Linear(1024, 1024)
-#             self.fc4 = nn.Linear(1024, 10)
-#         else:
-#             raise ValueError('Invalid number of layers')
-
-#     def forward(self, x):
-#         num_layers = self.num_layers
-#         if self.nonlin == 'softplus':
-#             fn = F.softplus
-#         if self.nonlin == 'sigmoid':
-#             fn = torch.sigmoid
-#         elif self.nonlin == 'tanh':
-#             fn = torch.tanh
-#         x = x.view(x.size(0), -1)
-#         z = self.fc1(x)
-#         x = fn(z)
-#         if num_layers==2:
-#             z = self.fc2(x)
-#         elif num_layers==3:
-#             z = self.fc2(x)
-#             x = fn(z)
-#             z = self.fc3(x)
-#         elif num_layers==4:
-#             z = self.fc2(x)
-#             x = fn(z)
-#             z = self.fc3(x)
-#             x = fn(z)
-#             z = self.fc4(x)
-#         return z
-
 def power_iteration(W1, W2=None, num_iters=50, return_vectors=False, verbose=False):
     # added code to run on CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

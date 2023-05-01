@@ -40,9 +40,9 @@ class NeuralNetwork(nn.Module):
         if self.A is None:
             dimInp = self.Linear[0].weight.shape[1]
             dimOut = self.Linear[-1].weight.shape[0]
-            self.A = torch.zeros((dimInp, dimInp)).float()
-            self.B = torch.eye(dimInp, dimOut).float()
-            self.c = torch.zeros(dimInp).float()
+            self.A = torch.zeros((dimOut, dimInp)).float()
+            self.B = torch.eye(dimOut, dimOut).float()
+            self.c = torch.zeros(dimOut).float()
         self.repetition = 1
 
     def load(self, path):

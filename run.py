@@ -90,6 +90,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
             print('** Solving Horizon: ', iteration, 'dimension: ', i)
         initialBub = torch.min(imageData @ c)
         # initialBub = None
+
         BB = BranchAndBound(upperCoordinate, lowerCoordinate, verbose=verbose, verboseEssential=verboseEssential,
                             inputDimension=dim,
                             eps=eps, network=network, queryCoefficient=c, currDim=i, device=device,
@@ -122,8 +123,9 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 
 def main(Method = None):
     configFolder = "Config/"
-    # fileName = "RobotArmS"
-    fileName = "test"
+    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "test"]
+    fileName = fileName[2]
+
     configFileToLoad = configFolder + fileName + ".json"
 
     with open(configFileToLoad, 'r') as file:
@@ -285,7 +287,7 @@ def main(Method = None):
 
 
 if __name__ == '__main__':
-    for Method in ['secondOrder']:
+    for Method in ['firstOrder', 'secondOrder']:
         runTimes = []
         numberOfBrancehs = []
         for i in range(1):
@@ -294,6 +296,6 @@ if __name__ == '__main__':
             numberOfBrancehs.append(t2)
         print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
         print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)))
-        plt.title(Method)
+        # plt.title(Method)
         
     plt.show()

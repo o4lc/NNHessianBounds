@@ -1,7 +1,7 @@
 {
-    "eps": 0.001,
+    "eps": 0.1,
     "verbose": 0,
-    "verboseMultiHorizon": 1,
+    "verboseMultiHorizon": 0,
     "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
     "virtualBranching": false,
@@ -11,7 +11,7 @@
     "useTwoNormDilation": false,
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
-    "finalHorizon": 5,
+    "finalHorizon": 1,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
     "plotProjectionsOfHigherDims": true,
@@ -23,36 +23,16 @@
     "pgdIterNum": 0,
     "pgdNumberOfInitializations": 1,
     "pgdStepSize": 0.5,
-    "A": [
-        [
-            1.0,
-            1.0
-        ],
-        [
-            0.0,
-            1.0
-        ]
-    ],
-    "B": [
-        [
-            0.5
-        ],
-        [
-            1.0
-        ]
-    ],
-    "c": [
-        0.0
-    ],
+    "A": null,
+    "B": null,
+    "c": null,
     "lowerCoordinate": [
-        2.5,
-        -0.25
+        null
     ],
     "upperCoordinate": [
-        3.0,
-        0.25
+        null
     ],
-    "pathToStateDictionary": "./Networks/doubleIntegratorTanh-2-10-5-5-1.pth",
+    "pathToStateDictionary": "Networks/MnistTanh.pth",
     "activation": "tanh",
     "boundingMethod": "firstOrder"
 }

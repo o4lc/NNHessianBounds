@@ -1,17 +1,17 @@
 {
-    "eps": 0.2,
+    "eps": 0.01,
     "verbose": 0,
     "verboseMultiHorizon": 1,
-    "verboseEssential": 1,
+    "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
-    "virtualBranching": false,
-    "numberOfVirtualBranches": 4,
-    "maxSearchDepthLipschitzBound": 10,
+    "virtualBranching": true,
+    "numberOfVirtualBranches": 8,
+    "maxSearchDepthLipschitzBound": 3,
     "normToUseLipschitz": 2,
     "useTwoNormDilation": false,
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
-    "finalHorizon": 1,
+    "finalHorizon": 12,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
     "plotProjectionsOfHigherDims": true,
@@ -23,16 +23,113 @@
     "pgdIterNum": 0,
     "pgdNumberOfInitializations": 1,
     "pgdStepSize": 0.5,
-    "A": null,
-    "B": null,
-    "c": null,
+    "A": [
+        [
+            1.0,
+            0.0,
+            0.0,
+            0.10000000149011612,
+            0.0,
+            0.0
+        ],
+        [
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.10000000149011612,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.10000000149011612
+        ],
+        [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ]
+    ],
+    "B": [
+        [
+            0.0,
+            0.0,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            0.0
+        ],
+        [
+            0.9800000190734863,
+            0.0,
+            0.0
+        ],
+        [
+            0.0,
+            -0.9800000190734863,
+            0.0
+        ],
+        [
+            0.0,
+            0.0,
+            0.10000000149011612
+        ]
+    ],
+    "c": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.9800000190734863
+    ],
     "lowerCoordinate": [
-        null
+        4.69000057220459,
+        4.65000057220459,
+        2.9750000953674316,
+        1.099999976158142,
+        -0.10100000000474974513,
+        -0.1010000000474974513
     ],
     "upperCoordinate": [
-        null
+        4.710000038146973,
+        4.750000038146973,
+        3.0259999046325684,
+        0.9001099988079071,
+        0.10100000000474974513,
+        0.10100000000474974513
     ],
-    "pathToStateDictionary": "Networks/MnistTanh.pth",
+    "pathToStateDictionary": "./Networks/quadrotor.pth",
     "activation": "tanh",
     "boundingMethod": "firstOrder"
 }
