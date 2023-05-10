@@ -1,10 +1,10 @@
 {
-    "eps": 0.1,
+    "eps": 0.0001,
     "verbose": 0,
-    "verboseMultiHorizon": 1,
+    "verboseMultiHorizon": true,
     "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
-    "virtualBranching": true,
+    "virtualBranching": false,
     "numberOfVirtualBranches": 8,
     "maxSearchDepthLipschitzBound": 3,
     "normToUseLipschitz": 2,

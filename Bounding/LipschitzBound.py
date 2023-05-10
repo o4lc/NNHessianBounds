@@ -48,19 +48,125 @@ class LipschitzBounding:
         self.activation = activation
         self.boundingMethod = boundingMethod
         self.calculatedCurvatureConstants = []
+    
+    def calculateCurvatureConstantGeneralLipSDP(self,
+                                                queryCoefficient: torch.Tensor,
+                                                g: float,
+                                                h: float,
+                                                timer):
+        with torch.no_grad():
+            params = list(self.network.Linear.parameters()) 
+            numLayers = len(params)//2
+            summationTerm = 0
 
+            r = torch.zeros((numLayers, 1)).to(self.device)
+            for i in range(numLayers):
+                if i == 0:
+                    r[i] = torch.linalg.norm(params[2 * i], ord=2)
+                else:
+                    temp_weight = self.weights[:i+1]
+                    alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
+                    # Should I run this with A, B == None?
+                    cc = np.eye((temp_weight[0]).shape[1])
+                    AA = None
+                    BB = None
+                    if i == numLayers - 1:
+                        # @TODO possibel not to calculate the whole Lipschitz constant because it won't be used
+                        # continue
+                        cc = queryCoefficient.unsqueeze(0).cpu().numpy()
+                        AA = self.network.A.cpu().numpy(),
+                        BB = self.network.B.cpu().numpy()
+                    self.startTime(timer, "LipSDP")
+                    r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta,
+                                                    cc, AA, BB,
+                                                    verbose=self.sdpSolverVerbose)]).to(self.device)
+                    self.pauseTime(timer, "LipSDP")
+
+            S = []  
+            if True:
+                for i in range(numLayers - 1):
+                    SS = []
+                    for j in range(i+1, numLayers): 
+                        if i == j - 1:
+                            if j != numLayers - 1:
+                                SS.append(torch.abs(params[2*j]))
+                            else:
+                                SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                        else:
+                            if j != numLayers - 1:
+                                SS.append(g * torch.abs(params[2*j]) @ SS[-1])
+                            else:
+                                SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
+                    S.append(SS[-1][0])
+            else:
+                for i in range(numLayers - 1):
+                    if i == numLayers - 2:
+                        S.append(torch.abs(torch.Tensor(self.weights[-1])))
+                    else:
+                        temp_weight = self.weights[i+1:]
+                        alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
+                        # Should I run this with A, B == None?
+                        cc = queryCoefficient.unsqueeze(0).cpu().numpy()
+                        AA = np.zeros((self.weights[0].shape[1], len(temp_weight[0][0])))
+                        BB = self.network.B.cpu().numpy()
+                            
+                        S.append(torch.Tensor([lipSDP(temp_weight, alpha, beta,
+                                                        cc, AA, BB,
+                                                        verbose=self.sdpSolverVerbose)]).to(self.device))
+
+            for l in range(numLayers-1):
+                summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
+
+        return h * summationTerm, r[-1]
+    
+    def calculateCurvatureConstantGeneral(self, 
+                                            queryCoefficient: torch.Tensor,
+                                            g: float,
+                                            h: float):
+        with torch.no_grad():
+            params = list(self.network.Linear.parameters()) 
+            numLayers = len(params)//2
+            summationTerm = 0
+
+            r = torch.zeros((numLayers, 1)).to(self.device)
+            for i in range(numLayers):
+                if i == 0:
+                    r[i] = torch.linalg.norm(params[2 * i], ord=2)
+                else:
+                    if i < numLayers - 1:
+                        r[i] = g * torch.linalg.norm(params[2 * i], ord=2) * r[i - 1]
+                    else:
+                        # @TODO can not calculate the whole Lipschitz constant because it won't be used
+                        continue
+                        r[i] = g * torch.linalg.norm(queryCoefficient @ self.network.B  @ params[2 * i], ord=2) * r[i - 1] \
+                                                + torch.linalg.norm(self.network.A, ord=2)
+
+            # print(r)
+            # print(self.network)
+            S = []  
+            for i in range(numLayers - 1):
+                SS = []
+                for j in range(i+1, numLayers): 
+                    if i == j - 1:
+                        if j != numLayers - 1:
+                            SS.append(torch.abs(params[2*j]))
+                        else:
+                            SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                    else:
+                        if j != numLayers - 1:
+                            SS.append(g * torch.abs(params[2*j]) @ SS[-1])
+                        else:
+                            SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
+                S.append(SS[-1][0])
+            for l in range(numLayers-1):
+                summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
+
+        return h * summationTerm
     def calculateCurvatureConstant(self,
                                    queryCoefficient: torch.Tensor,
+                                   g: float,
+                                   h: float
                                    ):
-        if self.network.activation == 'softplus':
-            g = 1.
-            h = 0.25
-        elif self.network.activation == 'sigmoid':
-            g = 0.25
-            h = 0.09623
-        elif self.network.activation == 'tanh':
-            g = 1.
-            h = 0.7699
         with torch.no_grad():
             params = list(self.network.Linear.parameters()) 
             if len(params) == 4:
@@ -174,7 +280,7 @@ class LipschitzBounding:
 
         if (self.normToUse == 2 and not self.useTwoNormDilation) or self.normToUse == 1:
             if self.useSdpForLipschitzCalculation and self.normToUse == 2:
-                alpha, beta = self.calculateMinMaxSlopes(inputLowerBound, inputUpperBound, self.activation)
+                alpha, beta = self.calculateMinMaxSlopes(None, inputLowerBound, inputUpperBound, self.activation)
 
                 # print(self.network)
                 # print(queryCoefficient.unsqueeze(0).cpu().numpy())
@@ -227,13 +333,18 @@ class LipschitzBounding:
             with torch.no_grad():
                 self.startTime(timer, "lowerBound:lipschitzForwardPass")
                 lowerBound = self.network(centerPoint) @ queryCoefficient - additiveTerm
+                # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm
                 self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
+
         elif self.boundingMethod == 'secondOrder':
-            additiveTerm1, additiveTerm2 = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, queryCoefficient)
+            additiveTerm1, additiveTerm2, firstOrderAdditiveTerm = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, queryCoefficient, timer)
             centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
             with torch.no_grad():
                 self.startTime(timer, "lowerBound:lipschitzForwardPass")
-                lowerBound = self.network(centerPoint) @ queryCoefficient - additiveTerm1 - additiveTerm2
+                temp1 = self.network(centerPoint) @ queryCoefficient - additiveTerm1 - additiveTerm2
+                temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
+                lowerBound = torch.maximum(temp1, temp2)
+                # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
                 self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
 
         if virtualBranch and self.performVirtualBranching:
@@ -279,7 +390,7 @@ class LipschitzBounding:
         self.pauseTime(timer, "lowerBound:virtualBranchMin")
         return virtualBranchLowerBounds
 
-    def calculateAdditiveTermSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient):
+    def calculateAdditiveTermSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient, timer):
         def J_c(x):
             return self.network(x) @ queryCoefficient
         
@@ -298,17 +409,34 @@ class LipschitzBounding:
         W2 = params[2].data
 
         x_center = (inputLowerBound + inputUpperBound) / 2.0
+
+        curvatureMethod = [2]
         if self.calculatedCurvatureConstants == []:
-            m, M = self.calculateCurvatureConstant(queryCoefficient)
+            m, M, lipcnt = torch.Tensor([-1]), torch.Tensor([-1]), torch.Tensor([-1])
+            if 0 in curvatureMethod:
+                m, M = self.calculateCurvatureConstant(queryCoefficient, g, h)
+                # print('--', M)
+            if 1 in curvatureMethod:
+                M = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h)
+                # print('--', M)
+            if 2 in curvatureMethod:
+                M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, timer)
+                # print('--', M)
+            # raise
+            
+ 
             self.calculatedCurvatureConstants.append(torch.maximum(m, M))
             self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
+            self.LipCnt = torch.Tensor([lipcnt]).to(self.device)
 
         # because it takes the jacobian w.r.t all input output pairs
         grad_x = torch.sum(jacobian(J_c, (x_center)), axis=1).reshape(x_center.shape)
         dialation = (inputUpperBound - inputLowerBound)/2
         dialation2 = dialation * torch.sign(grad_x)
 
-        return torch.sum(grad_x * dialation2, axis=1), self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2
+        return torch.sum(grad_x * dialation2, axis=1), \
+                        self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2,  \
+                        self.LipCnt * torch.linalg.norm(dialation, dim=1)
 
     def calculateAdditiveTerm(self, inputLowerBound, inputUpperBound, queryCoefficient,
                               extractedLipschitzConstants,
@@ -325,7 +453,7 @@ class LipschitzBounding:
                         # num_neurons = sum([newWeights[i].shape[0] for i in range(len(newWeights) - 1)])
                         # alpha = np.zeros((num_neurons, 1))
                         # beta = np.ones((num_neurons, 1))
-                        alpha, beta = self.calculateMinMaxSlopes(inputLowerBound, inputUpperBound)
+                        alpha, beta = self.calculateMinMaxSlopes(None, inputLowerBound, inputUpperBound)
                         if self.horizon == 1:
                             lipschitzConstant = torch.Tensor([lipSDP(self.weights, alpha, beta,
                                                                      queryCoefficient.unsqueeze(0).cpu().numpy(),
@@ -520,8 +648,10 @@ class LipschitzBounding:
             t.append(tTemp)
         return s, t
 
-    def calculateMinMaxSlopes(self, inputLowerBound, inputUpperBound, activation):
-        numberOfNeurons = sum([self.weights[i].shape[0] for i in range(len(self.weights) - 1)])
+    def calculateMinMaxSlopes(self, weights, inputLowerBound, inputUpperBound, activation):
+        if weights == None:
+            weights = self.weights
+        numberOfNeurons = sum([weights[i].shape[0] for i in range(len(weights) - 1)])
         if activation == 'softplus' or activation == 'tanh':
             alpha = np.zeros((numberOfNeurons, 1))
             beta = np.ones((numberOfNeurons, 1))
@@ -529,7 +659,7 @@ class LipschitzBounding:
             alpha = np.zeros((numberOfNeurons, 1))
             beta = 0.25 * np.ones((numberOfNeurons, 1))
 
-        assert inputLowerBound.shape[0] == 1
+        # assert inputLowerBound.shape[0] == 1
         # lowerBounds, upperBounds = self.propagateBoundsInNetwork(inputLowerBound[0, :].cpu().numpy(),
         #                                                          inputUpperBound[0, :].cpu().numpy(),
         #                                                          self.weights, self.biases)
@@ -553,7 +683,8 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
 
     if Asys is None:
         Asys = np.zeros((dim_in, dim_in))
-        Bsys = np.eye(dim_in)
+    if Bsys is None:
+        Bsys = np.eye(dim_in, dim_out)
     # decision vars
     Lambda = cp.Variable((num_neurons, 1), nonneg=True)
     T = cp.diag(Lambda)
@@ -562,13 +693,9 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
     # C = np.bmat([np.zeros((weights[-1].shape[0], dim_in + num_neurons - dim_last_hidden)), weights[-1]])
     E0 = np.bmat([np.eye(weights[0].shape[1]), np.zeros((weights[0].shape[1], dim_in + num_neurons - dim_in))])
     El = np.bmat([np.zeros((weights[-1].shape[1], dim_in + num_neurons - dim_last_hidden)), np.eye(weights[-1].shape[1])])
-    # print(Asys.shape, E0.shape)
     # print(Bsys.shape, weights[-1].shape, El.shape)
     Asys = coef @ Asys
     Bsys = coef @ Bsys
-    # print(Asys.shape, Bsys.shape)
-    # print((Asys @ E0).shape, (Bsys).shape, (weights[-1] @ El).shape)
-    # print('--')
     Cnew = Asys @ E0 + Bsys @ weights[-1] @ El
     C = Cnew
 

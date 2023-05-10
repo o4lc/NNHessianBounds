@@ -6,11 +6,27 @@ from packages import *
 from BranchAndBound import BranchAndBound
 from NeuralNetwork import NeuralNetwork
 import pandas as pd
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, FastICA
 import copy
 import json
+from Utilities.Timer import Timers
 
 torch.set_printoptions(precision=8)
+
+def gramschmidt(A):
+    """
+    Applies the Gram-Schmidt method to A
+    and returns Q and R, so Q*R = A.
+    """
+    R = np.zeros((A.shape[1], A.shape[1]))
+    Q = np.zeros(A.shape)
+    for k in range(0, A.shape[1]):
+        R[k, k] = np.sqrt(np.dot(A[:, k], A[:, k]))
+        Q[:, k] = A[:, k]/R[k, k]
+        for j in range(k+1, A.shape[1]):
+            R[k, j] = np.dot(Q[:, k], A[:, j])
+            A[:, j] = A[:, j] - R[k, j]*Q[:, k]
+    return Q, R
 
 
 def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
@@ -20,9 +36,15 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
         pca = PCA()
         pcaData = pca.fit_transform(imageData)
 
+        if False:
+            pca = FastICA()
+            pcaData = pca.fit_transform(pcaData)
+            Q, R = gramschmidt(data_comp)
+            data_comp = Q   
+
         data_mean = pca.mean_
         data_comp = pca.components_
-        data_sd = np.sqrt(pca.explained_variance_)
+
 
         inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
         # print(np.linalg.norm(data_comp, 2, 1))
@@ -81,6 +103,18 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
     spaceOutThreshold = config['spaceOutThreshold']
     dim = network.Linear[0].weight.shape[1]
     totalNumberOfBranches = 0
+
+    timers = Timers(["lowerBound",
+                        "lowerBound:lipschitzForwardPass", "lowerBound:lipschitzCalc",
+                        "lowerBound:lipschitzSearch",
+                        "lowerBound:virtualBranchPreparation", "lowerBound:virtualBranchMin",
+                        "upperBound",
+                        "bestBound",
+                        "branch", "branch:prune", "branch:maxFind", "branch:nodeCreation",
+                        "LipSDP",
+                        ])
+
+
     for i in range(len(pcaDirections)):
         previousLipschitzCalculations = []
         if i % 2 == 1 and torch.allclose(pcaDirections[i], -pcaDirections[i - 1]):
@@ -110,6 +144,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
                             initialBub=initialBub,
                             spaceOutThreshold=spaceOutThreshold,
                             boundingMethod=boundingMethod,
+                            timers=timers
                             )
         lowerBound, upperBound, space_left = BB.run()
         plottingConstants[i] = -lowerBound
@@ -118,13 +153,13 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 
         if False:
             print('Best lower/upper bounds are:', lowerBound, '->', upperBound)
-    return totalNumberOfBranches
+    return totalNumberOfBranches, timers.timers
 
 
 def main(Method = None):
     configFolder = "Config/"
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "test"]
-    fileName = fileName[2]
+    fileName = fileName[1]
 
     configFileToLoad = configFolder + fileName + ".json"
 
@@ -175,9 +210,9 @@ def main(Method = None):
     else:
         device = torch.device("cpu")
 
-
-    print(device)
-    print(' ')
+    if False:
+        print(device)
+        print(' ')
     
     lowerCoordinate = lowerCoordinate.to(device)
     upperCoordinate = upperCoordinate.to(device)
@@ -214,6 +249,7 @@ def main(Method = None):
 
     startTime = time.time()
     totalNumberOfBranches = 0
+    totalLipSDPTime = 0
     for iteration in range(finalHorizon):
         inputDataVariable = Variable(inputData, requires_grad=False)
         with no_grad():
@@ -237,10 +273,11 @@ def main(Method = None):
         pcaDirections = torch.Tensor(np.array(pcaDirections))
         calculatedLowerBoundsforpcaDirections = torch.Tensor(np.zeros(len(pcaDirections)))
 
-        t1 = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
+        t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
                                     originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod)
         totalNumberOfBranches += t1
+        totalLipSDPTime += timers['LipSDP'].totalTime
 
         if finalHorizon > 1:
             rotation = nn.Linear(dim, dim)
@@ -280,21 +317,25 @@ def main(Method = None):
     
     endTime = time.time()
 
-    print('The algorithm took (s):', endTime - startTime, 'with eps =', eps)
+    print('The algorithm took (s):', endTime - startTime, 'with eps =', eps, ', LipSDP time (s):', totalLipSDPTime)
     print("Total number of branches: {}".format(totalNumberOfBranches))
     torch.save(plottingData, "Output/reachLip" + fileName)
-    return endTime - startTime, totalNumberOfBranches
+    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime
 
 
 if __name__ == '__main__':
-    for Method in ['firstOrder', 'secondOrder']:
+    for Method in ['secondOrder']:
         runTimes = []
         numberOfBrancehs = []
+        lipSDPTimes = []
         for i in range(1):
-            t1, t2 = main(Method)
+            t1, t2, t3 = main(Method)
             runTimes.append(t1)
             numberOfBrancehs.append(t2)
+            lipSDPTimes.append(t3)
+        print('-----------------------------------')
         print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
+        print('Average LipSDP time: {}, std {}'.format(np.mean(lipSDPTimes), np.std(lipSDPTimes)))
         print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)))
         # plt.title(Method)
         

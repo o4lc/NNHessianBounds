@@ -3,7 +3,7 @@ from Utilities.Plotter import Plotter
 from BranchAndBoundNode import BB_node
 from Bounding.LipschitzBound import LipschitzBounding
 from Bounding.PgdUpperBound import PgdUpperBound
-from Utilities.Timer import Timers
+
 
 
 class BranchAndBound:
@@ -21,7 +21,8 @@ class BranchAndBound:
                  initialBub=None,
                  initialBubPoint=None,
                  spaceOutThreshold=10000,
-                 boundingMethod='firstOrder'
+                 boundingMethod='firstOrder',
+                 timers=None
                  ):
 
         self.lowerBoundClass = LipschitzBounding(network, device, virtualBranching, maxSearchDepthLipschitzBound,
@@ -66,17 +67,11 @@ class BranchAndBound:
         self.device = device
         self.maximumBatchSize = maximumBatchSize
         self.initialGD = initialGD
-        self.timers = Timers(["lowerBound",
-                              "lowerBound:lipschitzForwardPass", "lowerBound:lipschitzCalc",
-                              "lowerBound:lipschitzSearch",
-                              "lowerBound:virtualBranchPreparation", "lowerBound:virtualBranchMin",
-                              "upperBound",
-                              "bestBound",
-                              "branch", "branch:prune", "branch:maxFind", "branch:nodeCreation",
-                              ])
+        self.timers = timers
         self.numberOfBranches = 0
         self.spaceOutThreshold = spaceOutThreshold
         self.lipschitzUpdateDepths = [0]
+        self.boundingMethod = boundingMethod
 
     def prune(self):
         for i in range(len(self.spaceNodes) - 1, -1, -1):
@@ -168,10 +163,13 @@ class BranchAndBound:
 
     def bound(self, indices, parent_lb):
         self.timers.start("lowerBound")
-        lowerBounds = torch.maximum(self.lowerBound(indices), parent_lb)
+        tempLowerBound = self.lowerBound(indices)
+        lowerBounds = torch.maximum(tempLowerBound, parent_lb)
         self.timers.pause("lowerBound")
         self.timers.start("upperBound")
         upperBounds = self.upperBound(indices)
+        # if self.boundingMethod == "secondOrder":
+        #     upperBounds = upperBounds
         self.timers.pause("upperBound")
         for i, index in enumerate(indices):
             self.spaceNodes[index].upper = upperBounds[i]
