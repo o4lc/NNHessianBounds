@@ -22,6 +22,7 @@ class BranchAndBound:
                  initialBubPoint=None,
                  spaceOutThreshold=10000,
                  boundingMethod='firstOrder',
+                 splittingMethod='length',
                  timers=None
                  ):
 
@@ -72,6 +73,7 @@ class BranchAndBound:
         self.spaceOutThreshold = spaceOutThreshold
         self.lipschitzUpdateDepths = [0]
         self.boundingMethod = boundingMethod
+        self.splittingMethod = splittingMethod
 
     def prune(self):
         for i in range(len(self.spaceNodes) - 1, -1, -1):
@@ -91,6 +93,35 @@ class BranchAndBound:
 
     def upperBound(self, indices):
         return self.upperBoundClass.upperBound(indices, self.spaceNodes, self.queryCoefficient)
+    
+    def chooseCoordToSplit(self, node):
+        if self.splittingMethod == 'length':
+            coordToSplitSorted = torch.argsort(node.coordUpper - node.coordLower)
+            coordToSplit = coordToSplitSorted[len(coordToSplitSorted) - 1]
+
+        elif self.splittingMethod == 'BestLB':
+            temp_lb =  -1e8 * torch.ones(len(node.coordUpper))
+            for coord in range(len(node.coordUpper)):
+                parentNodeUpperBound = node.coordUpper
+                parentNodeLowerBound = node.coordLower
+
+                newIntervals = torch.linspace(parentNodeLowerBound[coord],
+                                                        parentNodeUpperBound[coord],
+                                                        self.nodeBranchingFactor + 1)
+                temp = []
+                with torch.no_grad():
+                    for i in range(self.nodeBranchingFactor):
+                        tempLow = parentNodeLowerBound.clone()
+                        tempHigh = parentNodeUpperBound.clone()
+
+                        tempLow[coord] = newIntervals[i]
+                        tempHigh[coord] = newIntervals[i+1]
+                        temp.append(self.lowerBoundClass.lowerBound(self.queryCoefficient, tempLow.unsqueeze(0), tempHigh.unsqueeze(0), timer=self.timers,
+                                               extractedLipschitzConstants=None))
+                    temp = torch.Tensor(temp)
+                    temp_lb[coord] = torch.min(temp)
+            coordToSplit = torch.argmax(temp_lb)
+        return coordToSplit
 
     def branch(self):
         # Prunning Function
@@ -123,8 +154,7 @@ class BranchAndBound:
         self.timers.pause("branch:maxFind")
         for j in range(len(nodes) - 1, -1, -1):
             self.timers.start("branch:nodeCreation")
-            coordToSplitSorted = torch.argsort(nodes[j].coordUpper - nodes[j].coordLower)
-            coordToSplit = coordToSplitSorted[len(coordToSplitSorted) - 1]
+            coordToSplit = self.chooseCoordToSplit(nodes[j])
             node = nodes[j]
             parentNodeUpperBound = node.coordUpper
             parentNodeLowerBound = node.coordLower
@@ -141,11 +171,9 @@ class BranchAndBound:
                 lipschitzConstant = node.lipschitzConstant
                 depth = node.depth + 1
                 if self.calculateLipschitzBeforeNodeCreation and depth in self.lipschitzUpdateDepths:
-                    # print(depth)
                     lipschitzConstant =\
                         self.lowerBoundClass.calculateLipschitzConstant(self.queryCoefficient,
                                                                         tempLow.unsqueeze(0), tempHigh.unsqueeze(0))
-                    # print(lipschitzConstant / self.initialLipschitz * 100)
 
                 self.spaceNodes.append(
                     BB_node(np.infty, -np.infty, tempHigh, tempLow, scoreFunction=self.scoreFunction,

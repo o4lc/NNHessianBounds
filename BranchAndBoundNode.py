@@ -16,17 +16,13 @@ class BB_node:
         self.depth = depth
     
     def calc_score(self, scoreFunction=None):
-        #@TODO
-        # Temp scoring function
         if scoreFunction is None:
             scoreFunction = self.scoreFunction
         dilation = self.coordUpper - self.coordLower
         if scoreFunction == 'length':
             return torch.max(dilation)
-        
         elif scoreFunction == 'volume':
             return torch.prod(dilation)
-
         elif scoreFunction == 'condNum':
             return torch.max(dilation) / torch.min(dilation)
         elif scoreFunction == "worstLowerBound":

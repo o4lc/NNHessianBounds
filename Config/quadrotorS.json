@@ -1,9 +1,10 @@
 {
-    "eps": 0.0001,
+    "eps": 0.001,
     "verbose": 0,
     "verboseMultiHorizon": true,
     "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
+    "splittingMethod": "length",
     "virtualBranching": false,
     "numberOfVirtualBranches": 8,
     "maxSearchDepthLipschitzBound": 3,
@@ -114,22 +115,22 @@
         -0.9800000190734863
     ],
     "lowerCoordinate": [
-        4.69000057220459,
-        4.65000057220459,
-        2.9750000953674316,
-        0.9499999976158142,
+        4.5,
+        4.3,
+        2.9,
+        -1.5,
         -0.00010000000474974513,
         -0.00010000000474974513
     ],
     "upperCoordinate": [
-        4.710000038146973,
-        4.750000038146973,
-        3.0259999046325684,
-        0.9501099988079071,
+        4.75,
+        4.75,
+        3.0,
+        -1.3,
         0.00010000000474974513,
         0.00010000000474974513
     ],
-    "pathToStateDictionary": "./Networks/quadrotorTanh.pth",
+    "pathToStateDictionary": "./Networks/Quad-6-32-32-3.pth",
     "activation": "tanh",
     "boundingMethod": "firstOrder"
 }

@@ -1,4 +1,3 @@
-from tabnanny import verbose
 import torch
 
 from packages import *
@@ -10,37 +9,42 @@ from sklearn.decomposition import PCA, FastICA
 import copy
 import json
 from Utilities.Timer import Timers
+import warnings
+
+
 
 torch.set_printoptions(precision=8)
+warnings.filterwarnings("ignore")
 
-def gramschmidt(A):
-    """
-    Applies the Gram-Schmidt method to A
-    and returns Q and R, so Q*R = A.
-    """
-    R = np.zeros((A.shape[1], A.shape[1]))
-    Q = np.zeros(A.shape)
-    for k in range(0, A.shape[1]):
-        R[k, k] = np.sqrt(np.dot(A[:, k], A[:, k]))
-        Q[:, k] = A[:, k]/R[k, k]
-        for j in range(k+1, A.shape[1]):
-            R[k, j] = np.dot(Q[:, k], A[:, j])
-            A[:, j] = A[:, j] - R[k, j]*Q[:, k]
-    return Q, R
+
+# def gramschmidt(A):
+#     """
+#     Applies the Gram-Schmidt method to A
+#     and returns Q and R, so Q*R = A.
+#     """
+#     R = np.zeros((A.shape[1], A.shape[1]))
+#     Q = np.zeros(A.shape)
+#     for k in range(0, A.shape[1]):
+#         R[k, k] = np.sqrt(np.dot(A[:, k], A[:, k]))
+#         Q[:, k] = A[:, k]/R[k, k]
+#         for j in range(k+1, A.shape[1]):
+#             R[k, j] = np.dot(Q[:, k], A[:, j])
+#             A[:, j] = A[:, j] - R[k, j]*Q[:, k]
+#     return Q, R
 
 
 def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
     data_mean = 0
     inputData = None
     if onlyPcaDirections:
-        pca = PCA()
-        pcaData = pca.fit_transform(imageData)
-
-        if False:
+        if True:
+            pca = PCA()
+            pcaData = pca.fit_transform(imageData)
+        else:
             pca = FastICA()
-            pcaData = pca.fit_transform(pcaData)
-            Q, R = gramschmidt(data_comp)
-            data_comp = Q   
+            pcaData = pca.fit_transform(imageData)
+            # Q, R = gramschmidt(data_comp)
+            # data_comp = Q   
 
         data_mean = pca.mean_
         data_comp = pca.components_
@@ -82,7 +86,7 @@ def calculateDirectionsOfHigherDimProjections(currentPcaDirections, imageData):
 def solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
                                 plottingConstants, calculatedLowerBoundsforpcaDirections,
                                 originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate,
-                                boundingMethod):
+                                boundingMethod, splittingMethod):
     eps = config['eps']
     verbose = config['verbose']
     verboseEssential = config['verboseEssential']
@@ -144,6 +148,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
                             initialBub=initialBub,
                             spaceOutThreshold=spaceOutThreshold,
                             boundingMethod=boundingMethod,
+                            splittingMethod=splittingMethod,
                             timers=timers
                             )
         lowerBound, upperBound, space_left = BB.run()
@@ -159,7 +164,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 def main(Method = None):
     configFolder = "Config/"
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "test"]
-    fileName = fileName[1]
+    fileName = fileName[2]
 
     configFileToLoad = configFolder + fileName + ".json"
 
@@ -180,6 +185,11 @@ def main(Method = None):
         activation = config['activation']
     except:
         activation = 'relu'
+    try:
+        splittingMethod = config['splittingMethod']
+    except:
+        splittingMethod = 'length'
+
     if Method == None:
         boundingMethod = config['boundingMethod']
     else:
@@ -275,7 +285,7 @@ def main(Method = None):
 
         t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
-                                    originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod)
+                                    originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod, splittingMethod)
         totalNumberOfBranches += t1
         totalLipSDPTime += timers['LipSDP'].totalTime
 
@@ -283,6 +293,8 @@ def main(Method = None):
             rotation = nn.Linear(dim, dim)
             rotation.weight = torch.nn.parameter.Parameter(torch.linalg.inv(torch.from_numpy(data_comp).float().to(device)))
             rotation.bias = torch.nn.parameter.Parameter(torch.from_numpy(data_mean).float().to(device))
+            # print(rotation.weight, '\n', rotation.weight.T @ rotation.weight)
+ 
             network.rotation = rotation
 
             centers = []
@@ -311,6 +323,12 @@ def main(Method = None):
             plt.axis("equal")
             if "robotarm" not in configFileToLoad.lower():
                 leg1 = plt.legend()
+            # plot constraints
+            if 'quad' in configFileToLoad.lower() and True:
+                AA_cons = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]])
+                bb_cons = np.array([3, -2, 4.5, -4])
+                pltp = polytope.Polytope(AA_cons, bb_cons)
+                ax = pltp.plot(ax, alpha = 0.5, color='red', edgecolor='red')
             plt.xlabel('$x_0$')
             plt.ylabel('$x_1$')
 
@@ -320,7 +338,7 @@ def main(Method = None):
     print('The algorithm took (s):', endTime - startTime, 'with eps =', eps, ', LipSDP time (s):', totalLipSDPTime)
     print("Total number of branches: {}".format(totalNumberOfBranches))
     torch.save(plottingData, "Output/reachLip" + fileName)
-    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime
+    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, splittingMethod
 
 
 if __name__ == '__main__':
@@ -329,14 +347,15 @@ if __name__ == '__main__':
         numberOfBrancehs = []
         lipSDPTimes = []
         for i in range(1):
-            t1, t2, t3 = main(Method)
+            t1, t2, t3, splittingMethod = main(Method)
             runTimes.append(t1)
             numberOfBrancehs.append(t2)
             lipSDPTimes.append(t3)
         print('-----------------------------------')
         print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
         print('Average LipSDP time: {}, std {}'.format(np.mean(lipSDPTimes), np.std(lipSDPTimes)))
-        print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)))
+        print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)), ', splitting method: ', splittingMethod)
+        print(' ')
         # plt.title(Method)
         
     plt.show()

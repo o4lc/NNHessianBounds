@@ -1,15 +1,18 @@
 from typing import List
 
 import numpy as np
+import time
 import torch
 import torch.nn as nn
 from copy import deepcopy
 import cvxpy as cp
 from scipy.linalg import block_diag
+import copy
 
 from Bounding.Utils4Curvature import power_iteration, MatrixNorm
 from torch.autograd.functional import jacobian
 
+from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
 
 
 class LipschitzBounding:
@@ -48,24 +51,59 @@ class LipschitzBounding:
         self.activation = activation
         self.boundingMethod = boundingMethod
         self.calculatedCurvatureConstants = []
+
+    def calculateboundsCROWN(self, 
+                            inputLowerBound: torch.Tensor,
+                            inputUpperBound: torch.Tensor,
+                            queryCoefficient: torch.Tensor):
+        
+        # Creating c^T @ Network
+        model = copy.deepcopy(self.network)
+        model.A = (queryCoefficient.unsqueeze(0) @ model.A)
+        model.B = (queryCoefficient.unsqueeze(0) @ model.B)
+        model.c = (queryCoefficient @ model.c)
+
+        my_input = torch.Tensor((inputLowerBound + inputUpperBound) / 2)
+        # Wrap the model with auto_LiRPA.
+        model = BoundedModule(model, my_input)
+        # Define perturbation. Here we add Linf perturbation to input data.
+        ptb = PerturbationLpNorm(norm=np.Inf, eps=torch.Tensor(torch.Tensor((-inputLowerBound + inputUpperBound) / 2)).to(self.device))
+        # Make the input a BoundedTensor with the pre-defined perturbation.
+        my_input = BoundedTensor(my_input, ptb)
+        with torch.no_grad():
+            # Regular forward propagation using BoundedTensor works as usual.
+            # prediction = model(my_input)
+            # Compute LiRPA bounds using the backward mode bound propagation (CROWN).
+            lb, ub = model.compute_bounds(x=(my_input,), method="CROWN")
+        return lb.reshape(-1, ), ub.reshape(-1, )
+        
+
     
     def calculateCurvatureConstantGeneralLipSDP(self,
                                                 queryCoefficient: torch.Tensor,
                                                 g: float,
                                                 h: float,
+                                                inputLowerBound: torch.Tensor,
+                                                inputUpperBound: torch.Tensor,
                                                 timer):
+        calculateFinalLayerLip = False
+        calculateSusingLipSDP = False
         with torch.no_grad():
             params = list(self.network.Linear.parameters()) 
             numLayers = len(params)//2
             summationTerm = 0
 
             r = torch.zeros((numLayers, 1)).to(self.device)
-            for i in range(numLayers):
+            for i in range(numLayers - (1 * (1 - calculateFinalLayerLip))):
                 if i == 0:
                     r[i] = torch.linalg.norm(params[2 * i], ord=2)
                 else:
                     temp_weight = self.weights[:i+1]
-                    alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
+                    temp_biases = self.biases[:i+1]
+                    alpha, beta = self.calculateMinMaxSlopes(temp_weight ,
+                                                                inputLowerBound, inputUpperBound,
+                                                                self.network.activation, 
+                                                                temp_biases)
                     # Should I run this with A, B == None?
                     cc = np.eye((temp_weight[0]).shape[1])
                     AA = None
@@ -77,13 +115,16 @@ class LipschitzBounding:
                         AA = self.network.A.cpu().numpy(),
                         BB = self.network.B.cpu().numpy()
                     self.startTime(timer, "LipSDP")
+
                     r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta,
                                                     cc, AA, BB,
                                                     verbose=self.sdpSolverVerbose)]).to(self.device)
+
                     self.pauseTime(timer, "LipSDP")
 
             S = []  
-            if True:
+            if calculateSusingLipSDP == False:
+                # Using simple recursion for S
                 for i in range(numLayers - 1):
                     SS = []
                     for j in range(i+1, numLayers): 
@@ -99,6 +140,7 @@ class LipschitzBounding:
                                 SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
                     S.append(SS[-1][0])
             else:
+                # Using LipSDP for S
                 for i in range(numLayers - 1):
                     if i == numLayers - 2:
                         S.append(torch.abs(torch.Tensor(self.weights[-1])))
@@ -109,15 +151,20 @@ class LipschitzBounding:
                         cc = queryCoefficient.unsqueeze(0).cpu().numpy()
                         AA = np.zeros((self.weights[0].shape[1], len(temp_weight[0][0])))
                         BB = self.network.B.cpu().numpy()
-                            
+
+                        self.startTime(timer, "LipSDP")
                         S.append(torch.Tensor([lipSDP(temp_weight, alpha, beta,
                                                         cc, AA, BB,
                                                         verbose=self.sdpSolverVerbose)]).to(self.device))
+                        self.pauseTime(timer, "LipSDP")
 
             for l in range(numLayers-1):
                 summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
 
-        return h * summationTerm, r[-1]
+        if calculateFinalLayerLip:
+            return h * summationTerm, r[-1]
+        else:
+            return h * summationTerm, torch.Tensor([-1]).to(self.device)
     
     def calculateCurvatureConstantGeneral(self, 
                                             queryCoefficient: torch.Tensor,
@@ -324,12 +371,12 @@ class LipschitzBounding:
             virtualBranchLowerBounds = \
                 self.handleVirtualBranching(inputLowerBound, inputUpperBound,
                                             queryCoefficient, extractedLipschitzConstants, timer)
-
+            
+        centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
         if self.boundingMethod == 'firstOrder':
             additiveTerm = self.calculateAdditiveTerm(inputLowerBound, inputUpperBound, queryCoefficient,
                                                     extractedLipschitzConstants, timer)
 
-            centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
             with torch.no_grad():
                 self.startTime(timer, "lowerBound:lipschitzForwardPass")
                 lowerBound = self.network(centerPoint) @ queryCoefficient - additiveTerm
@@ -338,15 +385,21 @@ class LipschitzBounding:
 
         elif self.boundingMethod == 'secondOrder':
             additiveTerm1, additiveTerm2, firstOrderAdditiveTerm = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, queryCoefficient, timer)
-            centerPoint = (inputUpperBound + inputLowerBound) / torch.tensor(2., device=self.device)
             with torch.no_grad():
                 self.startTime(timer, "lowerBound:lipschitzForwardPass")
                 temp1 = self.network(centerPoint) @ queryCoefficient - additiveTerm1 - additiveTerm2
-                temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
+                if torch.any(firstOrderAdditiveTerm < 0) :
+                    # Means that the lip constant was not calculated
+                    temp2 = temp1
+                else:
+                    temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
                 lowerBound = torch.maximum(temp1, temp2)
                 # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
                 self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
 
+        elif self.boundingMethod == 'CROWN':
+            lowerBound, __ = self.calculateboundsCROWN(inputLowerBound, inputUpperBound, queryCoefficient)
+        
         if virtualBranch and self.performVirtualBranching:
             lowerBound = torch.maximum(lowerBound, virtualBranchLowerBounds)
         return lowerBound
@@ -420,7 +473,8 @@ class LipschitzBounding:
                 M = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h)
                 # print('--', M)
             if 2 in curvatureMethod:
-                M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, timer)
+                M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer)
                 # print('--', M)
             # raise
             
@@ -429,11 +483,12 @@ class LipschitzBounding:
             self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
             self.LipCnt = torch.Tensor([lipcnt]).to(self.device)
 
+       
+
         # because it takes the jacobian w.r.t all input output pairs
         grad_x = torch.sum(jacobian(J_c, (x_center)), axis=1).reshape(x_center.shape)
         dialation = (inputUpperBound - inputLowerBound)/2
         dialation2 = dialation * torch.sign(grad_x)
-
         return torch.sum(grad_x * dialation2, axis=1), \
                         self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2,  \
                         self.LipCnt * torch.linalg.norm(dialation, dim=1)
@@ -629,14 +684,21 @@ class LipschitzBounding:
         return outputLowerBound, outputUpperBound
 
 
-    def propagateBoundsInNetwork(self, l, u, weights, biases):
-        relu = lambda x: np.maximum(x, 0)
+    def propagateBoundsInNetwork(self, l, u, weights, biases, activation='relu'):
+        if activation == 'relu':
+            activation = lambda x: np.maximum(x, 0)
+        elif activation == 'tanh':
+            activation = lambda x: np.tanh(x)
+        elif activation == 'softplus':
+            activation = lambda x: np.log(1 + np.exp(x))
+        elif activation == 'sigmoid':
+            activation = lambda x: 1 / (1 + np.exp(-x))
 
         s, t = [l], [u]
         for i, (W, b) in enumerate(zip(weights, biases)):
             val1, val2 = s[-1], t[-1]
             if 0 < i:
-                val1, val2 = relu(val1), relu(val2)
+                val1, val2 = activation(val1), activation(val2)
             if val1.shape == ():
                 val1 = np.array([val1])
                 val2 = np.array([val2])
@@ -648,25 +710,43 @@ class LipschitzBounding:
             t.append(tTemp)
         return s, t
 
-    def calculateMinMaxSlopes(self, weights, inputLowerBound, inputUpperBound, activation):
+    def calculateMinMaxSlopes(self, weights, inputLowerBound, inputUpperBound, activation, biases=None):
         if weights == None:
             weights = self.weights
+            biases = self.biases
         numberOfNeurons = sum([weights[i].shape[0] for i in range(len(weights) - 1)])
-        if activation == 'softplus' or activation == 'tanh':
+        if activation == 'softplus' or activation == 'tanh' or activation == 'relu':
             alpha = np.zeros((numberOfNeurons, 1))
             beta = np.ones((numberOfNeurons, 1))
         elif activation == 'sigmoid':
             alpha = np.zeros((numberOfNeurons, 1))
             beta = 0.25 * np.ones((numberOfNeurons, 1))
 
-        # assert inputLowerBound.shape[0] == 1
-        # lowerBounds, upperBounds = self.propagateBoundsInNetwork(inputLowerBound[0, :].cpu().numpy(),
-        #                                                          inputUpperBound[0, :].cpu().numpy(),
-        #                                                          self.weights, self.biases)
-        # lowerBounds = np.hstack(lowerBounds[1:-1]).T
-        # upperBounds = np.hstack(upperBounds[1:-1]).T
-        # alpha[lowerBounds >= 0] = 1
-        # beta[upperBounds <= 0] = 0
+        if True and (self.network.activation == 'relu' or self.network.activation == 'tanh'):
+            # For Local Calculations
+            inputLowerBound = torch.Tensor(inputLowerBound)
+            assert inputLowerBound.shape[0] == 1
+            lowerBounds, upperBounds = self.propagateBoundsInNetwork(inputLowerBound[0, :].cpu().numpy(),
+                                                                    inputUpperBound[0, :].cpu().numpy(),
+                                                                    weights, biases, 
+                                                                    self.network.activation)
+            lowerBounds = np.hstack(lowerBounds[1:-1]).T
+            upperBounds = np.hstack(upperBounds[1:-1]).T
+            if self.network.activation == 'relu':
+                alpha[lowerBounds >= 0] = 1
+                beta[upperBounds <= 0] = 0
+            elif self.network.activation == 'tanh':
+                # If upperbound and lowerbound are both negative
+                alpha[upperBounds <= 0] = (1 - np.tanh(lowerBounds[upperBounds <= 0]) ** 2)[:, np.newaxis]
+                beta[upperBounds <= 0] = (1 - np.tanh(upperBounds[upperBounds <= 0]) ** 2)[:, np.newaxis]
+                #If upperbound and lowerbound are both positive
+                alpha[lowerBounds >= 0] = (1 - np.tanh(lowerBounds[lowerBounds >= 0]) ** 2)[:, np.newaxis]
+                beta[lowerBounds >= 0] = (1 - np.tanh(upperBounds[lowerBounds >= 0]) ** 2)[:, np.newaxis]
+                #If upperbound is positive and lowerbound is negative
+                indexes = [a and b for a, b in zip(lowerBounds<= 0, upperBounds>= 0)]
+                alpha[indexes] = np.minimum((1 - np.tanh(lowerBounds[indexes]) ** 2)[:, np.newaxis],
+                                            (1 - np.tanh(upperBounds[indexes]) ** 2)[:, np.newaxis])
+
         return alpha, beta
 
 

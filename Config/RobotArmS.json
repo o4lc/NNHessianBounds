@@ -1,5 +1,5 @@
 {
-    "eps": 0.0001,
+    "eps": 0.001,
     "verbose": 0,
     "verboseMultiHorizon": 1,
     "verboseEssential": 0,
@@ -34,7 +34,7 @@
         2.094395160675049,
         2.094395160675049
     ],
-    "pathToStateDictionary": "Networks/RobotArmSoftplus.pth",
-    "activation": "softplus",
+    "pathToStateDictionary": "Networks/RobotArmStateDict2-50-2.pth",
+    "activation": "tanh",
     "boundingMethod": "firstOrder"
 }
