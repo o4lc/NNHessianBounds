@@ -90,4 +90,39 @@ class Plotter():
         # plt.show()
 
 
-       
+def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
+                     calculatedLowerBoundsforpcaDirections, Method = 'secondOrder', finalIter=False):
+    ax = plt.gca()
+    fig = plt.gcf()
+    if True:
+        AA = -np.array(pcaDirections[indexToStartReadingBoundsForPlotting:])
+        AA = AA[:, :2]
+        bb = []
+        for i in range(indexToStartReadingBoundsForPlotting, len(calculatedLowerBoundsforpcaDirections)):
+            bb.append(-calculatedLowerBoundsforpcaDirections[i])
+
+        bb = np.array(bb)
+        pltp = polytope.Polytope(AA, bb)
+        if Method == 'secondOrder':
+            ax = pltp.plot(ax, alpha = 0.1, color='grey', edgecolor='black')
+        else:  
+            ax = pltp.plot(ax, alpha = 0.5, color='None', edgecolor='blue')
+
+        if finalIter:
+            plt.axis("equal")
+            if "robotarm" not in configFileToLoad.lower():
+                leg1 = plt.legend()
+            # plot constraints
+            if 'quad' in configFileToLoad.lower():
+                e1 = patches.Ellipse((2, 4), 2, 2, color ='red', alpha = 0.25, hatch='//')
+                e2 = patches.Ellipse((4, 2), 2, 2, color ='red', alpha = 0.25, hatch='//')
+                ax.add_patch(e1)
+                ax.add_patch(e2)
+            plt.xlabel('$x_0$')
+            plt.ylabel('$x_1$')
+            custom_lines = [Line2D([0], [0], color='b', lw=2, linestyle='--'),
+                        Line2D([0], [0], color='grey', lw=2, linestyle='--')]
+            
+            if 'quad' in configFileToLoad.lower() and True:
+                ax.legend(custom_lines, ['ReachLipBnB', 'Our method'], loc=4)
+                plt.gca().add_artist(leg1)

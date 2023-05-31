@@ -71,9 +71,6 @@ class LipschitzBounding:
         # Make the input a BoundedTensor with the pre-defined perturbation.
         my_input = BoundedTensor(my_input, ptb)
         with torch.no_grad():
-            # Regular forward propagation using BoundedTensor works as usual.
-            # prediction = model(my_input)
-            # Compute LiRPA bounds using the backward mode bound propagation (CROWN).
             lb, ub = model.compute_bounds(x=(my_input,), method="CROWN")
         return lb.reshape(-1, ), ub.reshape(-1, )
         

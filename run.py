@@ -10,27 +10,16 @@ import copy
 import json
 from Utilities.Timer import Timers
 import warnings
+from tqdm import tqdm
+import matplotlib.patches as patches
+
+from Utilities.Plotter import plotReachability
 
 
 
 torch.set_printoptions(precision=8)
 warnings.filterwarnings("ignore")
 
-
-# def gramschmidt(A):
-#     """
-#     Applies the Gram-Schmidt method to A
-#     and returns Q and R, so Q*R = A.
-#     """
-#     R = np.zeros((A.shape[1], A.shape[1]))
-#     Q = np.zeros(A.shape)
-#     for k in range(0, A.shape[1]):
-#         R[k, k] = np.sqrt(np.dot(A[:, k], A[:, k]))
-#         Q[:, k] = A[:, k]/R[k, k]
-#         for j in range(k+1, A.shape[1]):
-#             R[k, j] = np.dot(Q[:, k], A[:, j])
-#             A[:, j] = A[:, j] - R[k, j]*Q[:, k]
-#     return Q, R
 
 
 def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
@@ -43,8 +32,6 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
         else:
             pca = FastICA()
             pcaData = pca.fit_transform(imageData)
-            # Q, R = gramschmidt(data_comp)
-            # data_comp = Q   
 
         data_mean = pca.mean_
         data_comp = pca.components_
@@ -182,6 +169,10 @@ def main(Method = None):
     pathToStateDictionary = config['pathToStateDictionary']
     fullLoop = config['fullLoop']
     try:
+        initialZonotope = config['InitialZonotope']
+    except:
+        initialZonotope = False
+    try:
         activation = config['activation']
     except:
         activation = 'relu'
@@ -228,18 +219,28 @@ def main(Method = None):
     upperCoordinate = upperCoordinate.to(device)
 
     network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True)
-    # print(network)
-    # torch.save(network.state_dict(), 'Networks/MnistTanh.pth')
-    # raise
+    # @TODO: move this
+    if initialZonotope and True:
+        zonotopeMatrix = torch.Tensor([[1, 1, 1], 
+                                        [-1, 0, 1]]) 
+        # zonotopeMatrix /=  torch.linalg.norm(zonotopeMatrix, 2, 0, True)
+        zonotopeMatrix /= 10
+
+        lowerCoordinate = torch.Tensor([-1, -1, -1])
+        upperCoordinate = torch.Tensor([1, 1, 1])
+        zCenter = (upperCoordinate + lowerCoordinate) / 2
+        xCenter = torch.Tensor([2.5, 0.])
+    else:
+        zonotopeMatrix = torch.Tensor([[1, 0], [0, 1]])
 
     horizonForLipschitz = 1
-    originalNetwork = None
+    originalNetworkZonotope = None
     if performMultiStepSingleHorizon:
-        originalNetwork = copy.deepcopy(network)
         horizonForLipschitz = finalHorizon
         network.setRepetition(finalHorizon)
         finalHorizon = 1
 
+    dimZ = lowerCoordinate.shape[0]
     dim = network.Linear[0].weight.shape[1]
     outputDim = network.Linear[-1].weight.shape[0]
     network.to(device)
@@ -249,25 +250,65 @@ def main(Method = None):
 
     plottingData = {}
 
-    inputData = (upperCoordinate - lowerCoordinate) * torch.rand(10000, dim, device=device) \
+    inputData = (upperCoordinate - lowerCoordinate) * torch.rand(10000, dimZ, device=device) \
                                                         + lowerCoordinate
-    if verboseMultiHorizon:
-        fig, ax = plt.subplots()
-        if "robotarm" not in configFileToLoad.lower():
-            plt.scatter(inputData[:, 0], inputData[:, 1], marker='.', label='Initial', alpha=0.5)
-    plottingData[0] = {"exactSet": inputData}
+    if initialZonotope:
+        inputPlotData = (inputData - zCenter) @ zonotopeMatrix.T + xCenter
+    else:
+        inputPlotData = inputData
 
+    if verboseMultiHorizon:
+        if plt.get_fignums():
+            fig = plt.gcf()
+            ax = plt.gca()
+            plotInitandHorizon = False
+        else:
+            fig, ax = plt.subplots()
+            plotInitandHorizon = True
+
+        if "robotarm" not in configFileToLoad.lower() and plotInitandHorizon:
+            plt.scatter(inputPlotData[:, 0], inputPlotData[:, 1], marker='.', label='Initial', alpha=0.5)
+    plottingData[0] = {"exactSet": inputData}
+    
     startTime = time.time()
     totalNumberOfBranches = 0
     totalLipSDPTime = 0
-    for iteration in range(finalHorizon):
+    for iteration in tqdm(range(finalHorizon)):
         inputDataVariable = Variable(inputData, requires_grad=False)
+        # @TODO: move this
+        if initialZonotope and iteration == 0:
+            with torch.no_grad():
+                networkZonotope = copy.deepcopy(network)
+                originalWeight0 = networkZonotope.Linear[0].weight
+
+                networkZonotope.Linear[0].weight = \
+                                torch.nn.parameter.Parameter((originalWeight0 @ zonotopeMatrix).float().to(device))
+                networkZonotope.Linear[0].bias += \
+                                torch.nn.parameter.Parameter((originalWeight0 @ (xCenter - zonotopeMatrix @ zCenter)).float().to(device))
+                
+                networkZonotope.c += networkZonotope.A @ xCenter
+                networkZonotope.A @= zonotopeMatrix
+
+                originalNetworkZonotope = copy.deepcopy(networkZonotope)
+
+        else:
+            if iteration == 0:
+                networkZonotope = copy.deepcopy(network)
+            else:
+                rotation =  networkZonotope.rotation
+                networkZonotope = copy.deepcopy(network)
+                networkZonotope.rotation = rotation
+
+            originalNetworkZonotope = copy.deepcopy(networkZonotope)
+
+        
         with no_grad():
-            imageData = network.forward(inputDataVariable)
+            imageData = networkZonotope.forward(inputDataVariable)
+
         plottingData[iteration + 1] = {"exactSet": imageData}
         pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData)
 
-        if verboseMultiHorizon:
+        if verboseMultiHorizon and plotInitandHorizon:
             plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
 
@@ -283,9 +324,10 @@ def main(Method = None):
         pcaDirections = torch.Tensor(np.array(pcaDirections))
         calculatedLowerBoundsforpcaDirections = torch.Tensor(np.zeros(len(pcaDirections)))
 
-        t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
+
+        t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, networkZonotope,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
-                                    originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod, splittingMethod)
+                                    originalNetworkZonotope, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod, splittingMethod)
         totalNumberOfBranches += t1
         totalLipSDPTime += timers['LipSDP'].totalTime
 
@@ -295,7 +337,7 @@ def main(Method = None):
             rotation.bias = torch.nn.parameter.Parameter(torch.from_numpy(data_mean).float().to(device))
             # print(rotation.weight, '\n', rotation.weight.T @ rotation.weight)
  
-            network.rotation = rotation
+            networkZonotope.rotation = rotation
 
             centers = []
             for i, component in enumerate(data_comp):
@@ -306,43 +348,30 @@ def main(Method = None):
                 centers.append(center)
                 upperCoordinate[i] = u - center
                 lowerCoordinate[i] = l - center
+            
+            if initialZonotope:
+                upperCoordinate = upperCoordinate[:dim]
+                lowerCoordinate = lowerCoordinate[:dim]
+
 
         if verboseMultiHorizon:
-            AA = -np.array(pcaDirections[indexToStartReadingBoundsForPlotting:])
-            AA = AA[:, :2]
-            bb = []
-            for i in range(indexToStartReadingBoundsForPlotting, len(calculatedLowerBoundsforpcaDirections)):
-                bb.append(-calculatedLowerBoundsforpcaDirections[i])
+            plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
+                                calculatedLowerBoundsforpcaDirections, Method, finalIter = (iteration == (finalHorizon - 1)))
 
-            bb = np.array(bb)
-            pltp = polytope.Polytope(AA, bb)
-            ax = pltp.plot(ax, alpha = 0.1, color='grey', edgecolor='black')
-            ax.set_xlim([0, 5])
-            ax.set_ylim([-4, 5])
-
-            plt.axis("equal")
-            if "robotarm" not in configFileToLoad.lower():
-                leg1 = plt.legend()
-            # plot constraints
-            if 'quad' in configFileToLoad.lower() and True:
-                AA_cons = np.array([[1, 0], [-1, 0], [0, 1], [0, -1]])
-                bb_cons = np.array([3, -2, 4.5, -4])
-                pltp = polytope.Polytope(AA_cons, bb_cons)
-                ax = pltp.plot(ax, alpha = 0.5, color='red', edgecolor='red')
-            plt.xlabel('$x_0$')
-            plt.ylabel('$x_1$')
+           
 
     
     endTime = time.time()
 
     print('The algorithm took (s):', endTime - startTime, 'with eps =', eps, ', LipSDP time (s):', totalLipSDPTime)
     print("Total number of branches: {}".format(totalNumberOfBranches))
-    torch.save(plottingData, "Output/reachLip" + fileName)
+    torch.save(plottingData, "Output/reachCurv" + fileName)
+    plt.savefig("Output/reachCurv" + fileName + '.png')
     return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, splittingMethod
 
 
 if __name__ == '__main__':
-    for Method in ['secondOrder']:
+    for Method in ['firstOrder', 'secondOrder']:
         runTimes = []
         numberOfBrancehs = []
         lipSDPTimes = []

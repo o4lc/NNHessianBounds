@@ -1,6 +1,6 @@
 #To keep track of old configurations:
-#Quadrotor init cond:
-"lowerCoordinate": [
+#Quadrotor init cond ICRA:
+    "lowerCoordinate": [
         4.69000057220459,
         4.65000057220459,
         2.9750000953674316,
@@ -16,3 +16,22 @@
         0.00010000000474974513,
         0.00010000000474974513
     ]
+
+
+#Quadrotor init cond May 24:
+    "lowerCoordinate": [
+        4.0,
+        4.25,
+        2.95,
+        0.7,
+        -0.00010000000474974513,
+        -0.00010000000474974513
+    ],
+    "upperCoordinate": [
+        4.25,
+        4.75,
+        3.05,
+        0.8,
+        0.00010000000474974513,
+        0.00010000000474974513
+    ],

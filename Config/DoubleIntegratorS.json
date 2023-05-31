@@ -13,6 +13,7 @@
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
     "finalHorizon": 5,
+    "InitialZonotope": true,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
     "plotProjectionsOfHigherDims": true,
@@ -48,11 +49,11 @@
     ],
     "lowerCoordinate": [
         2.5,
-        -0.25
+        0.25
     ],
     "upperCoordinate": [
         3.0,
-        0.25
+        0.5
     ],
     "pathToStateDictionary": "./Networks/doubleIntegratorTanh-2-10-5-5-1.pth",
     "activation": "tanh",
