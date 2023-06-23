@@ -83,6 +83,12 @@ class LipschitzBounding:
                                                 inputLowerBound: torch.Tensor,
                                                 inputUpperBound: torch.Tensor,
                                                 timer):
+        ''' 
+        In this section, haveing a closed loop system is meaning-less during calculations of subs-networks
+        Knowing that the hessian of the Ax+Bu is the same as Bu ... therefore, we can calculate the curvature
+        without having the closed loop system
+        We concider BW^L as the final layer weight.
+        '''
         calculateFinalLayerLip = False
         calculateSusingLipSDP = False
         with torch.no_grad():
@@ -101,22 +107,20 @@ class LipschitzBounding:
                                                                 inputLowerBound, inputUpperBound,
                                                                 self.network.activation, 
                                                                 temp_biases)
-                    # Should I run this with A, B == None?
+                    
                     cc = np.eye((temp_weight[0]).shape[1])
                     AA = None
                     BB = None
                     if i == numLayers - 1:
                         # @TODO possibel not to calculate the whole Lipschitz constant because it won't be used
-                        # continue
                         cc = queryCoefficient.unsqueeze(0).cpu().numpy()
-                        AA = self.network.A.cpu().numpy(),
+                        # AA = self.network.A.cpu().numpy()
+                        # AA = np.zeros((len(temp_weight[-1]), self.weights[0].shape[1]))
                         BB = self.network.B.cpu().numpy()
                     self.startTime(timer, "LipSDP")
-
                     r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta,
                                                     cc, AA, BB,
                                                     verbose=self.sdpSolverVerbose)]).to(self.device)
-
                     self.pauseTime(timer, "LipSDP")
 
             S = []  
@@ -140,7 +144,7 @@ class LipschitzBounding:
                 # Using LipSDP for S
                 for i in range(numLayers - 1):
                     if i == numLayers - 2:
-                        S.append(torch.abs(torch.Tensor(self.weights[-1])))
+                        S.append(torch.abs(torch.Tensor(self.network.B.cpu().numpy() @ self.weights[-1])))
                     else:
                         temp_weight = self.weights[i+1:]
                         alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
@@ -157,7 +161,8 @@ class LipschitzBounding:
 
             for l in range(numLayers-1):
                 summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
-
+            
+        
         if calculateFinalLayerLip:
             return h * summationTerm, r[-1]
         else:
@@ -472,7 +477,6 @@ class LipschitzBounding:
             if 2 in curvatureMethod:
                 M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
                                                                         inputLowerBound, inputUpperBound, timer)
-                # print('--', M)
             # raise
             
  

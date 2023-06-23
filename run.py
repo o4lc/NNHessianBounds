@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore")
 
 
 
-def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
+def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data = None):
     data_mean = 0
     inputData = None
     if onlyPcaDirections:
@@ -45,7 +45,7 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
             pcaDirections.append(-direction)
             pcaDirections.append(direction)
 
-    else:
+    elif label_data == None:
         pcaDirections = []
         numDirections = 30
 
@@ -53,6 +53,20 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData):
             [[np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)] for i in range(numDirections)])
         for direction in data_comp:
             pcaDirections.append(-direction)
+            pcaDirections.append(direction)
+
+    else:
+        pcaDirections = []
+        numDirections = 9  
+
+        data_comp = np.zeros((numDirections, numDirections + 1))
+        data_comp[:, label_data] = 1
+        for i in range(len(data_comp)):
+            if i < label_data:
+                data_comp[i, i] = -1
+            else:
+                data_comp[i, i+1] = -1
+        for direction in data_comp:
             pcaDirections.append(direction)
     return pcaDirections, data_comp, data_mean, inputData
 
@@ -151,7 +165,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 def main(Method = None):
     configFolder = "Config/"
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "test"]
-    fileName = fileName[2]
+    fileName = fileName[3]
 
     configFileToLoad = configFolder + fileName + ".json"
 
@@ -195,8 +209,13 @@ def main(Method = None):
         lowerCoordinate = torch.Tensor(config['lowerCoordinate'])
         upperCoordinate = torch.Tensor(config['upperCoordinate'])
     except:
-        lowerCoordinate = torch.zeros((784, ))
-        upperCoordinate = torch.ones((784, )) / 10000 + lowerCoordinate
+        (X_train, y_train), (_, _) = mnist.load_data()
+        # print(train_X.shape, train_y[0])
+        # plt.imshow(train_X[0], cmap='gray')
+        # plt.show()
+        lowerCoordinate = torch.ones((784, )) / 10000 * -1 + X_train[0].reshape(-1)
+        upperCoordinate = torch.ones((784, )) / 10000 + X_train[0].reshape(-1)
+        label_data = y_train[0]
 
 
     if not verboseMultiHorizon:
@@ -306,8 +325,7 @@ def main(Method = None):
             imageData = networkZonotope.forward(inputDataVariable)
 
         plottingData[iteration + 1] = {"exactSet": imageData}
-        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData)
-
+        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data)
         if verboseMultiHorizon and plotInitandHorizon:
             plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
@@ -323,7 +341,6 @@ def main(Method = None):
         plottingData[iteration + 1]['d'] = plottingConstants
         pcaDirections = torch.Tensor(np.array(pcaDirections))
         calculatedLowerBoundsforpcaDirections = torch.Tensor(np.zeros(len(pcaDirections)))
-
 
         t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, networkZonotope,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
@@ -371,7 +388,7 @@ def main(Method = None):
 
 
 if __name__ == '__main__':
-    for Method in ['firstOrder', 'secondOrder']:
+    for Method in ['secondOrder']:
         runTimes = []
         numberOfBrancehs = []
         lipSDPTimes = []
@@ -385,6 +402,6 @@ if __name__ == '__main__':
         print('Average LipSDP time: {}, std {}'.format(np.mean(lipSDPTimes), np.std(lipSDPTimes)))
         print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)), ', splitting method: ', splittingMethod)
         print(' ')
-        # plt.title(Method)
-        
-    plt.show()
+
+    if plt.get_fignums():
+        plt.show()
