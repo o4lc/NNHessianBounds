@@ -162,7 +162,6 @@ class LipschitzBounding:
             for l in range(numLayers-1):
                 summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
             
-        
         if calculateFinalLayerLip:
             return h * summationTerm, r[-1]
         else:
@@ -444,6 +443,26 @@ class LipschitzBounding:
             for i in range(0, batchSize)]).to(self.device)
         self.pauseTime(timer, "lowerBound:virtualBranchMin")
         return virtualBranchLowerBounds
+    
+    def compareSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient, timer):
+        def J_c(x):
+            return self.network(x) @ queryCoefficient
+        
+        if self.network.activation == 'softplus':
+            g = 1.
+            h = 0.25
+        elif self.network.activation == 'sigmoid':
+            g = 0.25
+            h = 0.09623
+        elif self.network.activation == 'tanh':
+            g = 1.
+            h = 0.7699
+
+        M1 = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h)
+        M2, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer)
+        return M1, M2
+
 
     def calculateAdditiveTermSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient, timer):
         def J_c(x):
@@ -477,6 +496,7 @@ class LipschitzBounding:
             if 2 in curvatureMethod:
                 M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
                                                                         inputLowerBound, inputUpperBound, timer)
+                # print('--', M)
             # raise
             
  

@@ -67,7 +67,7 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
             else:
                 data_comp[i, i+1] = -1
         for direction in data_comp:
-            pcaDirections.append(direction)
+            pcaDirections.append(direction / np.linalg.norm(direction))
     return pcaDirections, data_comp, data_mean, inputData
 
 
@@ -125,11 +125,10 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
         if i % 2 == 1 and torch.allclose(pcaDirections[i], -pcaDirections[i - 1]):
             previousLipschitzCalculations = BB.lowerBoundClass.calculatedLipschitzConstants
         c = pcaDirections[i]
-        if False:
+        if True:
             print('** Solving Horizon: ', iteration, 'dimension: ', i)
         initialBub = torch.min(imageData @ c)
         # initialBub = None
-
         BB = BranchAndBound(upperCoordinate, lowerCoordinate, verbose=verbose, verboseEssential=verboseEssential,
                             inputDimension=dim,
                             eps=eps, network=network, queryCoefficient=c, currDim=i, device=device,
@@ -209,13 +208,14 @@ def main(Method = None):
         lowerCoordinate = torch.Tensor(config['lowerCoordinate'])
         upperCoordinate = torch.Tensor(config['upperCoordinate'])
     except:
-        (X_train, y_train), (_, _) = mnist.load_data()
-        # print(train_X.shape, train_y[0])
-        # plt.imshow(train_X[0], cmap='gray')
-        # plt.show()
-        lowerCoordinate = torch.ones((784, )) / 10000 * -1 + X_train[0].reshape(-1)
-        upperCoordinate = torch.ones((784, )) / 10000 + X_train[0].reshape(-1)
-        label_data = y_train[0]
+        trainTransform = transforms.ToTensor()
+        trainSet = torchvision.datasets.MNIST('data', train=True, transform=trainTransform, download=True)
+    
+        X_train = trainSet[0][0].reshape(28*28)
+        y_train = trainSet[0][1]
+        lowerCoordinate = torch.ones((784, )) / 20000 * -1 + torch.Tensor(X_train)
+        upperCoordinate = torch.ones((784, )) / 20000      + torch.Tensor(X_train)
+        label_data = y_train
 
 
     if not verboseMultiHorizon:
@@ -238,6 +238,7 @@ def main(Method = None):
     upperCoordinate = upperCoordinate.to(device)
 
     network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True)
+
     # @TODO: move this
     if initialZonotope and True:
         zonotopeMatrix = torch.Tensor([[1, 1, 1], 
@@ -325,7 +326,8 @@ def main(Method = None):
             imageData = networkZonotope.forward(inputDataVariable)
 
         plottingData[iteration + 1] = {"exactSet": imageData}
-        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data)
+        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData,
+                                                                                           label_data if 'MnistS' in fileName else None)
         if verboseMultiHorizon and plotInitandHorizon:
             plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
@@ -334,7 +336,7 @@ def main(Method = None):
         indexToStartReadingBoundsForPlotting = 0
         plottingDirections = pcaDirections
         if plotProjectionsOfHigherDims:
-            indexToStartReadingBoundsForPlotting = calculateDirectionsOfHigherDimProjections(pcaDirections, imageData)
+            indexToStartReadingBoundsForPlotting = calculateDirectionsOfHigherDimProjections(pcaDirections, imageData) 
 
         plottingData[iteration + 1]["A"] = pcaDirections
         plottingConstants = np.zeros((len(pcaDirections), 1))
@@ -345,6 +347,7 @@ def main(Method = None):
         t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, networkZonotope,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
                                     originalNetworkZonotope, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod, splittingMethod)
+        
         totalNumberOfBranches += t1
         totalLipSDPTime += timers['LipSDP'].totalTime
 
@@ -374,8 +377,6 @@ def main(Method = None):
         if verboseMultiHorizon:
             plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
                                 calculatedLowerBoundsforpcaDirections, Method, finalIter = (iteration == (finalHorizon - 1)))
-
-           
 
     
     endTime = time.time()

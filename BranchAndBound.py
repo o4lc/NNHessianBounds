@@ -34,9 +34,10 @@ class BranchAndBound:
                                                  horizon=horizonForLipschitz,
                                                  boundingMethod=boundingMethod
                                                  )
+
         self.queryCoefficient = queryCoefficient
         self.calculateLipschitzBeforeNodeCreation = not (normToUseLipschitz == float("inf")
-                                                         or (normToUseLipschitz == 2 and useTwoNormDilation))
+                                                         or (normToUseLipschitz == 2 and useTwoNormDilation)) and (boundingMethod == 'firstOrder')
         if self.calculateLipschitzBeforeNodeCreation:
             lipschitzConstant =\
                 self.lowerBoundClass.calculateLipschitzConstant(self.queryCoefficient, coordLow.unsqueeze(0), coordUp.unsqueeze(0))
