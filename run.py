@@ -163,8 +163,8 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 
 def main(Method = None):
     configFolder = "Config/"
-    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "test"]
-    fileName = fileName[3]
+    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU" ,"test"]
+    fileName = fileName[2]
 
     configFileToLoad = configFolder + fileName + ".json"
 
@@ -289,6 +289,7 @@ def main(Method = None):
         if "robotarm" not in configFileToLoad.lower() and plotInitandHorizon:
             plt.scatter(inputPlotData[:, 0], inputPlotData[:, 1], marker='.', label='Initial', alpha=0.5)
     plottingData[0] = {"exactSet": inputData}
+
     
     startTime = time.time()
     totalNumberOfBranches = 0
@@ -343,6 +344,7 @@ def main(Method = None):
         plottingData[iteration + 1]['d'] = plottingConstants
         pcaDirections = torch.Tensor(np.array(pcaDirections))
         calculatedLowerBoundsforpcaDirections = torch.Tensor(np.zeros(len(pcaDirections)))
+
 
         t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, networkZonotope,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,

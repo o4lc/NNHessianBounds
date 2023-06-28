@@ -76,6 +76,7 @@ class BranchAndBound:
         self.boundingMethod = boundingMethod
         self.splittingMethod = splittingMethod
 
+
     def prune(self):
         for i in range(len(self.spaceNodes) - 1, -1, -1):
             if self.spaceNodes[i].lower > self.bestUpperBound and len(self.spaceNodes) > 1:
@@ -233,7 +234,9 @@ class BranchAndBound:
 
         if self.verbose:
             plotter = Plotter()
+        
         self.bound([0], self.bestLowerBound)
+
         if self.scoreFunction in ["worstLowerBound", "bestLowerBound", "bestUpperBound", "worstUpperBound",
                                   "averageBounds", "weightedGap"]:
             self.spaceNodes[0].score = self.spaceNodes[0].calc_score()

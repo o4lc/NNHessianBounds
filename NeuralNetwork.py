@@ -31,6 +31,12 @@ class NeuralNetwork(nn.Module):
             self.Linear = nn.Sequential(
                             nn.Linear(784, 100),
                             activationF,
+                            nn.Linear(100, 100),
+                            activationF,
+                            nn.Linear(100, 100),
+                            activationF,
+                            nn.Linear(100, 100),
+                            activationF,
                             nn.Linear(100, 10))
         
         self.rotation = nn.Identity()

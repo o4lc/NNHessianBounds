@@ -118,10 +118,13 @@ class LipschitzBounding:
                         # AA = np.zeros((len(temp_weight[-1]), self.weights[0].shape[1]))
                         BB = self.network.B.cpu().numpy()
                     self.startTime(timer, "LipSDP")
+                    # print(len(temp_weight))
+                    # print(self.network)
                     r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta,
                                                     cc, AA, BB,
                                                     verbose=self.sdpSolverVerbose)]).to(self.device)
                     self.pauseTime(timer, "LipSDP")
+                    # print(r)
 
             S = []  
             if calculateSusingLipSDP == False:
@@ -496,10 +499,8 @@ class LipschitzBounding:
             if 2 in curvatureMethod:
                 M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
                                                                         inputLowerBound, inputUpperBound, timer)
-                # print('--', M)
             # raise
             
- 
             self.calculatedCurvatureConstants.append(torch.maximum(m, M))
             self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
             self.LipCnt = torch.Tensor([lipcnt]).to(self.device)
