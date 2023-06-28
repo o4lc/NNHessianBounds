@@ -39,7 +39,6 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
 
         inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
         # print(np.linalg.norm(data_comp, 2, 1))
-
         pcaDirections = []
         for direction in data_comp:
             pcaDirections.append(-direction)
@@ -125,7 +124,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
         if i % 2 == 1 and torch.allclose(pcaDirections[i], -pcaDirections[i - 1]):
             previousLipschitzCalculations = BB.lowerBoundClass.calculatedLipschitzConstants
         c = pcaDirections[i]
-        if True:
+        if False:
             print('** Solving Horizon: ', iteration, 'dimension: ', i)
         initialBub = torch.min(imageData @ c)
         # initialBub = None
@@ -163,7 +162,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 
 def main(Method = None):
     configFolder = "Config/"
-    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU" ,"test"]
+    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear' ,"test"]
     fileName = fileName[2]
 
     configFileToLoad = configFolder + fileName + ".json"
@@ -189,6 +188,10 @@ def main(Method = None):
         activation = config['activation']
     except:
         activation = 'relu'
+    try:
+        isLinear = config['isLinear']
+    except:
+        isLinear = True
     try:
         splittingMethod = config['splittingMethod']
     except:
@@ -237,8 +240,7 @@ def main(Method = None):
     lowerCoordinate = lowerCoordinate.to(device)
     upperCoordinate = upperCoordinate.to(device)
 
-    network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True)
-
+    network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True, isLinear=isLinear)
     # @TODO: move this
     if initialZonotope and True:
         zonotopeMatrix = torch.Tensor([[1, 1, 1], 
@@ -329,9 +331,9 @@ def main(Method = None):
         plottingData[iteration + 1] = {"exactSet": imageData}
         pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData,
                                                                                            label_data if 'MnistS' in fileName else None)
+        
         if verboseMultiHorizon and plotInitandHorizon:
             plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
-
 
         numberOfInitialDirections = len(pcaDirections)
         indexToStartReadingBoundsForPlotting = 0
