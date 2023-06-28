@@ -163,7 +163,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 def main(Method = None):
     configFolder = "Config/"
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear' ,"test"]
-    fileName = fileName[2]
+    fileName = fileName[5]
 
     configFileToLoad = configFolder + fileName + ".json"
 
