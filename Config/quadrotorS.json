@@ -1,5 +1,5 @@
 {
-    "eps": 0.001,
+    "eps": 0.01,
     "verbose": 0,
     "verboseMultiHorizon": true,
     "verboseEssential": 0,
