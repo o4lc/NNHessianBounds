@@ -75,7 +75,16 @@ class LipschitzBounding:
         return lb.reshape(-1, ), ub.reshape(-1, )
 
     def calculateNLCurvature(self, queryCoefficient, inputLowerBound, inputUpperBound):
-        return torch.abs(queryCoefficient[0]) * (torch.sqrt(1 + 9 * torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))**2))
+        deltaT = self.network.deltaT
+        if self.network.NLBench in ['B2', 'B5']:
+            return  6 * deltaT * queryCoefficient[0] * torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
+        elif self.network.NLBench == 'B4':
+            return queryCoefficient[1] * deltaT
+        elif self.network.NLBench == 'TORA':
+            return 0.1 * deltaT * queryCoefficient[1] 
+        elif self.network.NLBench == 'ACC':
+            return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])))
+    
 
     def calculateCurvatureConstantGeneralLipSDP(self,
                                                 queryCoefficient: torch.Tensor,
@@ -388,10 +397,52 @@ class LipschitzBounding:
                 self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
 
         elif self.boundingMethod == 'secondOrder':
-            additiveTerm1, additiveTerm2, firstOrderAdditiveTerm = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, queryCoefficient, timer)
+            # individual = True
+            firstOrderAdditiveTerm = torch.Tensor([-1]).to(self.device)
+            grad_x, dialation, dialation2, x_center = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, \
+                                                                                                         queryCoefficient, timer)
+            self.startTime(timer, "lowerBound:lipschitzForwardPass")
+            # if individual:
+            if self.network.isLinear:
+                additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
+                additiveTerm2 = self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2
+
+                secondOrderAdditiveTerm = additiveTerm1 + additiveTerm2
+                firstOrderAdditiveTerm = self.LipCnt * torch.linalg.norm(dialation, dim=1)
+            else:
+                nonLinearCurvatureConstant = self.calculateNLCurvature(queryCoefficient, inputLowerBound, inputUpperBound)
+                fullNLCurvatureConstant = self.calculatedCurvatureConstants + nonLinearCurvatureConstant
+                additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
+                additiveTerm2 = fullNLCurvatureConstant / 2 * torch.linalg.norm(dialation, dim=1)**2
+
+                secondOrderAdditiveTerm = additiveTerm1 + additiveTerm2
+                firstOrderAdditiveTerm = torch.Tensor([-1]).to(self.device) #@TODO: Fix this
+
+            # else:
+            #     if self.network.isLinear:
+            #         xstarUnconstraint = x_center + grad_x / self.calculatedCurvatureConstants
+            #         # print(xstarUnconstraint[:, 0] < x_center[:, 0])
+            #         xstar = [inputUpperBound[:, i] * (xstarUnconstraint[:, i] < x_center[:, i]) + \
+            #                                 inputLowerBound[:, i] * (xstarUnconstraint[:, i] >= x_center[:, i])\
+            #                                       for i in range(inputLowerBound.shape[1])]
+            #         xstar = torch.vstack(xstar).T
+            #         # print(self.calculatedCurvatureConstants)
+            #         secondOrderAdditiveTerm = - ((xstar - x_center) @ grad_x.T).diagonal() + \
+            #             self.calculatedCurvatureConstants / 2 * torch.linalg.norm(xstar - x_center, dim=1)**2
+                    
+            #     if ((secondOrderAdditiveTerm - tmptmp) != 0).any():
+            #         print(inputLowerBound)
+            #         print(inputUpperBound)
+            #         print('!!!!!!!!!!!!!')
+            #         print(secondOrderAdditiveTerm, tmptmp)
+            #         print(xstar)
+            #         print(grad_x > 0)
+            #         raise
+            #     # print(secondOrderAdditiveTerm, ' ----------------')
+            #     # raise
+
             with torch.no_grad():
-                self.startTime(timer, "lowerBound:lipschitzForwardPass")
-                temp1 = self.network(centerPoint) @ queryCoefficient - additiveTerm1 - additiveTerm2
+                temp1 = self.network(centerPoint) @ queryCoefficient - secondOrderAdditiveTerm
                 if torch.any(firstOrderAdditiveTerm < 0) :
                     # Means that the lip constant was not calculated
                     temp2 = temp1
@@ -399,13 +450,15 @@ class LipschitzBounding:
                     temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
                 lowerBound = torch.maximum(temp1, temp2)
                 # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
-                self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
+            self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
 
         elif self.boundingMethod == 'CROWN':
             lowerBound, __ = self.calculateboundsCROWN(inputLowerBound, inputUpperBound, queryCoefficient)
         
         if virtualBranch and self.performVirtualBranching:
             lowerBound = torch.maximum(lowerBound, virtualBranchLowerBounds)
+
+        # print('******************', lowerBound)
         return lowerBound
 
     def handleVirtualBranching(self, inputLowerBound, inputUpperBound, queryCoefficient,
@@ -481,10 +534,6 @@ class LipschitzBounding:
             g = 1.
             h = 0.7699
 
-        params = list(self.network.parameters())
-        W1 = params[0].data
-        W2 = params[2].data
-
         x_center = (inputLowerBound + inputUpperBound) / 2.0
 
         curvatureMethod = [2]
@@ -509,16 +558,7 @@ class LipschitzBounding:
         grad_x = torch.sum(jacobian(J_c, (x_center)), axis=1).reshape(x_center.shape)
         dialation = (inputUpperBound - inputLowerBound)/2
         dialation2 = dialation * torch.sign(grad_x)
-        if self.network.isLinear:
-            return torch.sum(grad_x * dialation2, axis=1), \
-                            self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2,  \
-                            self.LipCnt * torch.linalg.norm(dialation, dim=1)
-        else:
-            nonLinearCurvatureConstant = self.calculateNLCurvature(queryCoefficient, inputLowerBound, inputUpperBound)
-            fullNLCurvatureConstant = self.calculatedCurvatureConstants + nonLinearCurvatureConstant
-            return torch.sum(grad_x * dialation2, axis=1), \
-                            fullNLCurvatureConstant / 2 * torch.linalg.norm(dialation, dim=1)**2,  \
-                            torch.Tensor([-1]).to(self.device)
+        return grad_x, dialation, dialation2, x_center
 
     def calculateAdditiveTerm(self, inputLowerBound, inputUpperBound, queryCoefficient,
                               extractedLipschitzConstants,

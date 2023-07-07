@@ -164,6 +164,11 @@ def main(Method = None):
     configFolder = "Config/"
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear' ,"test"]
     fileName = fileName[5]
+    if fileName == "nonLinear":
+        fileName = ["B2", "B4", "B5", 'TORA', 'ACC']
+        fileName = fileName[2]
+        configFolder += "nonLinear/"
+
 
     configFileToLoad = configFolder + fileName + ".json"
 
