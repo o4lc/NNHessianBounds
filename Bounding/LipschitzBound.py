@@ -77,13 +77,13 @@ class LipschitzBounding:
     def calculateNLCurvature(self, queryCoefficient, inputLowerBound, inputUpperBound):
         deltaT = self.network.deltaT
         if self.network.NLBench in ['B2', 'B5']:
-            return  6 * deltaT * queryCoefficient[0] * torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
+            return  6 * deltaT * torch.abs(queryCoefficient[0]) * torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
         elif self.network.NLBench == 'B4':
-            return queryCoefficient[1] * deltaT
-        elif self.network.NLBench == 'TORA':
-            return 0.1 * deltaT * queryCoefficient[1] 
-        elif self.network.NLBench == 'ACC':
-            return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])))
+            return torch.abs(queryCoefficient[1]) * deltaT
+        # elif self.network.NLBench == 'TORA':
+        #     return 0.1 * deltaT * queryCoefficient[1] 
+        # elif self.network.NLBench == 'ACC':
+        #     return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])))
     
 
     def calculateCurvatureConstantGeneralLipSDP(self,
@@ -411,7 +411,8 @@ class LipschitzBounding:
                 firstOrderAdditiveTerm = self.LipCnt * torch.linalg.norm(dialation, dim=1)
             else:
                 nonLinearCurvatureConstant = self.calculateNLCurvature(queryCoefficient, inputLowerBound, inputUpperBound)
-                fullNLCurvatureConstant = self.calculatedCurvatureConstants + nonLinearCurvatureConstant
+                fullNLCurvatureConstant = self.network.deltaT * self.calculatedCurvatureConstants \
+                                                    + nonLinearCurvatureConstant
                 additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
                 additiveTerm2 = fullNLCurvatureConstant / 2 * torch.linalg.norm(dialation, dim=1)**2
 
@@ -536,7 +537,7 @@ class LipschitzBounding:
 
         x_center = (inputLowerBound + inputUpperBound) / 2.0
 
-        curvatureMethod = [2]
+        curvatureMethod = [1]
         if self.calculatedCurvatureConstants == []:
             m, M, lipcnt = torch.Tensor([-1]), torch.Tensor([-1]), torch.Tensor([-1])
             if 0 in curvatureMethod:

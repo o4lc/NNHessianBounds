@@ -12,7 +12,7 @@ from Utilities.Timer import Timers
 import warnings
 from tqdm import tqdm
 import matplotlib.patches as patches
-
+import pdb
 from Utilities.Plotter import plotReachability
 
 
@@ -23,8 +23,10 @@ warnings.filterwarnings("ignore")
 
 
 def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data = None):
-    data_mean = 0
+    data_mean = None
     inputData = None
+    pcaDirections = []
+
     if onlyPcaDirections:
         if True:
             pca = PCA()
@@ -39,23 +41,24 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
 
         inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
         # print(np.linalg.norm(data_comp, 2, 1))
-        pcaDirections = []
         for direction in data_comp:
             pcaDirections.append(-direction)
             pcaDirections.append(direction)
 
     elif label_data == None:
-        pcaDirections = []
-        numDirections = 30
-
-        data_comp = np.array(
-            [[np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)] for i in range(numDirections)])
+        # numDirections = 30
+        # data_comp = np.array(
+        #     [np.array([np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)]) for i in range(numDirections)])
+        numDirections = imageData.shape[1]
+        data_comp = np.eye(numDirections)
+        
+        data_mean = np.mean(imageData.numpy(), 0)
+        inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
         for direction in data_comp:
             pcaDirections.append(-direction)
             pcaDirections.append(direction)
 
     else:
-        pcaDirections = []
         numDirections = 9  
 
         data_comp = np.zeros((numDirections, numDirections + 1))
@@ -67,6 +70,7 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
                 data_comp[i, i+1] = -1
         for direction in data_comp:
             pcaDirections.append(direction / np.linalg.norm(direction))
+
     return pcaDirections, data_comp, data_mean, inputData
 
 
@@ -123,9 +127,10 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
         previousLipschitzCalculations = []
         if i % 2 == 1 and torch.allclose(pcaDirections[i], -pcaDirections[i - 1]):
             previousLipschitzCalculations = BB.lowerBoundClass.calculatedLipschitzConstants
-        c = pcaDirections[i]
+        c = pcaDirections[i].float()
         if False:
             print('** Solving Horizon: ', iteration, 'dimension: ', i)
+        # pdb.set_trace()
         initialBub = torch.min(imageData @ c)
         # initialBub = None
         BB = BranchAndBound(upperCoordinate, lowerCoordinate, verbose=verbose, verboseEssential=verboseEssential,
@@ -166,7 +171,7 @@ def main(Method = None):
     fileName = fileName[5]
     if fileName == "nonLinear":
         fileName = ["B2", "B4", "B5", 'TORA', 'ACC']
-        fileName = fileName[2]
+        fileName = fileName[1]
         configFolder += "nonLinear/"
 
 
@@ -336,20 +341,20 @@ def main(Method = None):
         plottingData[iteration + 1] = {"exactSet": imageData}
         pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData,
                                                                                            label_data if 'MnistS' in fileName else None)
-        
         if verboseMultiHorizon and plotInitandHorizon:
             plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
         numberOfInitialDirections = len(pcaDirections)
         indexToStartReadingBoundsForPlotting = 0
         plottingDirections = pcaDirections
-        if plotProjectionsOfHigherDims:
+        if plotProjectionsOfHigherDims and network.isLinear:
             indexToStartReadingBoundsForPlotting = calculateDirectionsOfHigherDimProjections(pcaDirections, imageData) 
 
         plottingData[iteration + 1]["A"] = pcaDirections
         plottingConstants = np.zeros((len(pcaDirections), 1))
         plottingData[iteration + 1]['d'] = plottingConstants
         pcaDirections = torch.Tensor(np.array(pcaDirections))
+        # pcaDirections = torch.from_numpy(np.array(pcaDirections))
         calculatedLowerBoundsforpcaDirections = torch.Tensor(np.zeros(len(pcaDirections)))
 
 
