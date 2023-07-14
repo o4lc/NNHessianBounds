@@ -1,6 +1,6 @@
 from fileinput import filename
 
-from nbformat import write
+# from nbformat import write
 from packages import *
 
 class Plotter():
@@ -101,6 +101,7 @@ def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsF
         for i in range(indexToStartReadingBoundsForPlotting, len(calculatedLowerBoundsforpcaDirections)):
             bb.append(-calculatedLowerBoundsforpcaDirections[i])
 
+        # print(AA, torch.vstack(bb))
         bb = np.array(bb)
         pltp = polytope.Polytope(AA, bb)
         if Method == 'secondOrder':
@@ -126,3 +127,21 @@ def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsF
             if 'quad' in configFileToLoad.lower() and True:
                 ax.legend(custom_lines, ['ReachLipBnB', 'Our method'], loc=4)
                 plt.gca().add_artist(leg1)
+
+def verisigPlotCMP():
+    with open('./Utilities/B5.txt') as f:
+        lines = f.readlines()
+
+    for line in lines:
+        tmp = line.split(' ')
+        cleaned = []
+        for i in range(len(tmp)):
+            # print(tmp[i])
+            if tmp[i] in ['hold'] or 'clear' in tmp[i]:
+                break
+            if tmp[i] in [',', "'color'", '[', ']', 'plot(', "'[0", '0.4', "0]');\n"]:
+                pass
+            else:
+                cleaned.append((float(tmp[i])))
+        else:
+            plt.plot(cleaned[:9], cleaned[9:], '--', c='black', alpha=0.2)

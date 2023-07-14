@@ -1,25 +1,23 @@
 {
-    "eps": 0.05,
+    "eps": 0.01,
     "verbose": 0,
-    "verboseMultiHorizon": true,
+    "verboseMultiHorizon": 1,
     "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
-    "splittingMethod": "length",
     "virtualBranching": false,
-    "numberOfVirtualBranches": 8,
-    "maxSearchDepthLipschitzBound": 3,
+    "numberOfVirtualBranches": 4,
+    "maxSearchDepthLipschitzBound": 10,
     "normToUseLipschitz": 2,
     "useTwoNormDilation": false,
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
-    "finalHorizon": 10,
-    "InitialZonotope": false,
+    "finalHorizon": 1,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
     "plotProjectionsOfHigherDims": true,
     "onlyPcaDirections": false,
     "fullLoop": false,
-    "spaceOutThreshold": 20000,
+    "spaceOutThreshold": 40000,
     "nodeBranchingFactor": 2,
     "branchNodeNum": 512,
     "pgdIterNum": 0,
@@ -29,17 +27,14 @@
     "B": null,
     "c": null,
     "lowerCoordinate": [
-        0.38,
-        0.45,
-        0.25
+        -1,
+        -1
     ],
     "upperCoordinate": [
-        0.4,
-        0.47,
-        0.27
+        1,
+        1
     ],
-    "pathToStateDictionary": "./Networks/nonLinear/B5.pth",
+    "pathToStateDictionary": "Networks/randomNetTanh.pth",
     "activation": "tanh",
-    "boundingMethod": "firstOrder",
-    "isLinear": false
+    "boundingMethod": "firstOrder"
 }

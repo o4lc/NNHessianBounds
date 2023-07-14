@@ -12,7 +12,7 @@
     "useTwoNormDilation": false,
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
-    "finalHorizon": 10,
+    "finalHorizon": 20,
     "InitialZonotope": false,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,

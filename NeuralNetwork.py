@@ -29,6 +29,11 @@ class NeuralNetwork(nn.Module):
                 *layers
             )
             self.load_state_dict(stateDictionary)
+            if 'random' in path:
+                self.Linear.append(activationF)
+                self.Linear.append(nn.Linear(2, 2))
+                self.Linear[-1].weight.data = torch.eye(2)
+                self.Linear[-1].bias.data = torch.zeros(2)
 
         else:
             self.Linear = nn.Sequential(
@@ -85,7 +90,7 @@ class NeuralNetwork(nn.Module):
             x2 = x[:, 2] + self.deltaT * (-x[:, 0] + u[:, 0])
             return torch.stack((x0, x1, x2)).T
         elif self.NLBench == 'B5':
-            self.deltaT = 0.01
+            self.deltaT = 0.005
             x0 = x[:, 0] + self.deltaT * (x[:, 0]**3 - x[:, 1])
             x1 = x[:, 1] + self.deltaT * (x[:,2])
             x2 = x[:, 2] + self.deltaT * (u[:, 0])

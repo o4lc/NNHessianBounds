@@ -13,13 +13,10 @@ import warnings
 from tqdm import tqdm
 import matplotlib.patches as patches
 import pdb
-from Utilities.Plotter import plotReachability
-
-
+from Utilities.Plotter import plotReachability, verisigPlotCMP
 
 torch.set_printoptions(precision=8)
 warnings.filterwarnings("ignore")
-
 
 
 def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data = None):
@@ -46,7 +43,7 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
             pcaDirections.append(direction)
 
     elif label_data == None:
-        # numDirections = 30
+        # numDirections = 8
         # data_comp = np.array(
         #     [np.array([np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)]) for i in range(numDirections)])
         numDirections = imageData.shape[1]
@@ -167,11 +164,11 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 
 def main(Method = None):
     configFolder = "Config/"
-    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear' ,"test"]
+    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear', 'RandomNet' ,"test"]
     fileName = fileName[5]
     if fileName == "nonLinear":
         fileName = ["B2", "B4", "B5", 'TORA', 'ACC']
-        fileName = fileName[1]
+        fileName = fileName[2]
         configFolder += "nonLinear/"
 
 
@@ -298,9 +295,10 @@ def main(Method = None):
             fig, ax = plt.subplots()
             plotInitandHorizon = True
 
-        if "robotarm" not in configFileToLoad.lower() and plotInitandHorizon:
+        if "robotarm" not in configFileToLoad.lower() and 'random' not in configFileToLoad.lower()  and plotInitandHorizon:
             plt.scatter(inputPlotData[:, 0], inputPlotData[:, 1], marker='.', label='Initial', alpha=0.5)
     plottingData[0] = {"exactSet": inputData}
+
 
     
     startTime = time.time()
@@ -343,6 +341,7 @@ def main(Method = None):
                                                                                            label_data if 'MnistS' in fileName else None)
         if verboseMultiHorizon and plotInitandHorizon:
             plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
+
 
         numberOfInitialDirections = len(pcaDirections)
         indexToStartReadingBoundsForPlotting = 0
@@ -394,7 +393,8 @@ def main(Method = None):
 
     
     endTime = time.time()
-
+    if fileName == 'B5':
+        verisigPlotCMP()
     print('The algorithm took (s):', endTime - startTime, 'with eps =', eps, ', LipSDP time (s):', totalLipSDPTime)
     print("Total number of branches: {}".format(totalNumberOfBranches))
     torch.save(plottingData, "Output/reachCurv" + fileName)
