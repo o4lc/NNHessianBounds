@@ -128,8 +128,7 @@ class LipschitzBounding:
                         # AA = np.zeros((len(temp_weight[-1]), self.weights[0].shape[1]))
                         BB = self.network.B.cpu().numpy()
                     self.startTime(timer, "LipSDP")
-                    # print(len(temp_weight))
-                    # print(self.network)
+ 
                     r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta,
                                                     cc, AA, BB,
                                                     verbose=self.sdpSolverVerbose)]).to(self.device)
@@ -537,7 +536,9 @@ class LipschitzBounding:
 
         x_center = (inputLowerBound + inputUpperBound) / 2.0
 
-        curvatureMethod = [1]
+        curvatureMethod = [2]
+        if self.network.isLinear == False:
+            curvatureMethod = [1]
         if self.calculatedCurvatureConstants == []:
             m, M, lipcnt = torch.Tensor([-1]), torch.Tensor([-1]), torch.Tensor([-1])
             if 0 in curvatureMethod:
@@ -866,3 +867,31 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
     prob.solve(solver=cp.MOSEK, verbose=verbose)
 
     return np.sqrt(rho.value)[0][0]
+
+def calculateLipschitzConstantSingleBatchNumpy(weights, coef=None, normToUse=float("inf")):
+        numberOfWeights = len(weights)
+        ms = np.zeros(numberOfWeights, dtype=np.float64)
+        ms[0] = np.linalg.norm(weights[0], normToUse)
+
+        if coef is None:
+            coef = np.eye(weights[-1].shape[0])
+        weights[-1] = coef @ weights[-1]
+        print('A and B are not added here')
+        raise NotImplemented
+        for i in range(1, numberOfWeights):
+            multiplier = 1.
+            temp = 0.
+            for j in range(i, -1, -1):
+                productMatrix = weights[i]
+                for k in range(i - 1, j - 1, -1):
+                    productMatrix = productMatrix @ weights[k]
+                    # if j == 0:
+                    #     print(weights[k])
+                if j > 0:
+                    multiplier *= 0.5
+                    temp += multiplier * np.linalg.norm(productMatrix, normToUse) * ms[j - 1]
+                else:
+                    temp += multiplier * np.linalg.norm(productMatrix, normToUse)
+            ms[i] = temp
+        # print(ms)
+        return ms
