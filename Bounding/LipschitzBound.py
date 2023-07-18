@@ -12,7 +12,7 @@ import copy
 from Bounding.Utils4Curvature import power_iteration, MatrixNorm
 from torch.autograd.functional import jacobian
 
-from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
+# from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
 
 
 class LipschitzBounding:

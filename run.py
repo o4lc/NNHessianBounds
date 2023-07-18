@@ -240,6 +240,7 @@ def main(Method = None):
     else:
         device = torch.device("cpu")
 
+    device = torch.device("cpu")
     if False:
         print(device)
         print(' ')
