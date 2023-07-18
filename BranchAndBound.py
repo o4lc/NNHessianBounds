@@ -275,6 +275,9 @@ class BranchAndBound:
                 print('Best LB', self.bestLowerBound, 'Best UB', self.bestUpperBound)
                 plotter.plotSpace(self.spaceNodes, self.initCoordLow, self.initCoordUp)
                 print('----------' * 10)
+        
+        assert self.bestUpperBound >= self.bestLowerBound
+        
         if self.verbose:
             print("Number of created nodes: {}".format(self.numberOfBranches))
             plotter.showAnimation(self.spaceNodes, self.currDim)

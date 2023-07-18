@@ -17,7 +17,7 @@
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
     "plotProjectionsOfHigherDims": false,
-    "onlyPcaDirections": true,
+    "onlyPcaDirections": false,
     "fullLoop": false,
     "spaceOutThreshold": 40000,
     "nodeBranchingFactor": 2,

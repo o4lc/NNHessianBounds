@@ -167,8 +167,8 @@ def main(Method = None):
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear', 'RandomNet' ,"test"]
     fileName = fileName[5]
     if fileName == "nonLinear":
-        fileName = ["B1", "B2", "B3", "B4", "B5"]
-        fileName = fileName[2]
+        fileName = ["B1", "B2", "B3", "B4", "B5","ACC", "TORA"]
+        fileName = fileName[3]
         configFolder += "nonLinear/"
 
 
@@ -300,7 +300,6 @@ def main(Method = None):
             plt.scatter(inputPlotData[:, 0], inputPlotData[:, 1], marker='.', label='Initial', alpha=0.5)
     plottingData[0] = {"exactSet": inputData}
 
-
     
     startTime = time.time()
     totalNumberOfBranches = 0
@@ -387,11 +386,9 @@ def main(Method = None):
                 upperCoordinate = upperCoordinate[:dim]
                 lowerCoordinate = lowerCoordinate[:dim]
 
-
         if verboseMultiHorizon:
             plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
                                 calculatedLowerBoundsforpcaDirections, Method, finalIter = (iteration == (finalHorizon - 1)))
-
     
     endTime = time.time()
     if fileName == 'B5':

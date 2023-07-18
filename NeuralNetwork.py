@@ -62,11 +62,6 @@ class NeuralNetwork(nn.Module):
                 self.A = torch.zeros((dimInp, dimInp)).float()
                 self.B = torch.zeros((dimInp, dimOut)).float()
                 self.c = torch.zeros(dimOut).float()
-                # TEMP @TODO: MOVE THIS TO A BETTER PLACE
-                if self.NLBench == 'B2':
-                    self.B[1] = 1
-                elif self.NLBench in ['B4', 'B5']:
-                    self.B[2] = 1
 
         self.repetition = 1
 
@@ -102,22 +97,23 @@ class NeuralNetwork(nn.Module):
             x1 = x[:, 1] + self.deltaT * (x[:,2])
             x2 = x[:, 2] + self.deltaT * (u[:, 0])
             return torch.stack((x0, x1, x2)).T
-        # elif self.NLBench == 'TORA':
-        #     self.deltaT = 0.05
-        #     x0 = x[:, 0] + self.deltaT * (x[:, 1])
-        #     x1 = x[:, 1] + self.deltaT * (-x[:, 0] + 0.1*torch.sin(x[:, 2]))
-        #     x2 = x[:, 2] + self.deltaT * (x[:, 3])
-        #     x3 = x[:, 3] + self.deltaT * (u[:, 0])
-        #     return torch.stack((x0, x1, x2, x3)).T
-        # elif self.NLBench == 'ACC':
-        #     self.deltaT = 0.1
-        #     x0 = x[:, 0] + self.deltaT * (x[:, 1])
-        #     x1 = x[:, 1] + self.deltaT * (x[:, 2])
-        #     x2 = x[:, 2] + self.deltaT * (-4 - 2 * x[:, 2] - x[:, 1]**2 / 1000)
-        #     x3 = x[:, 3] + self.deltaT * (x[:, 4])
-        #     x4 = x[:, 4] + self.deltaT * (x[:, 5])
-        #     x5 = x[:, 5] + self.deltaT * (2 * u[:, 0] - 2 * x[:, 5] - x[:, 4]**2 / 1000)
-        #     return torch.stack((x0, x1, x2, x3, x4, x5)).T    
+        elif self.NLBench == 'ACC':
+            self.deltaT = 0.1
+            x0 = x[:, 0] + self.deltaT * (x[:, 1])
+            x1 = x[:, 1] + self.deltaT * (x[:, 2])
+            x2 = x[:, 2] + self.deltaT * (-4 - 2 * x[:, 2] - x[:, 1]**2 / 1000)
+            x3 = x[:, 3] + self.deltaT * (x[:, 4])
+            x4 = x[:, 4] + self.deltaT * (x[:, 5])
+            x5 = x[:, 5] + self.deltaT * (2 * u[:, 0] - 2 * x[:, 5] - x[:, 4]**2 / 1000)
+            return torch.stack((x0, x1, x2, x3, x4, x5)).T  
+        elif self.NLBench == 'TORA':
+            self.deltaT = 0.01
+            x0 = x[:, 0] + self.deltaT * (x[:, 1])
+            x1 = x[:, 1] + self.deltaT * (-x[:, 0] + 0.1*torch.sin(x[:, 2]))
+            x2 = x[:, 2] + self.deltaT * (x[:, 3])
+            x3 = x[:, 3] + self.deltaT * (u[:, 0])
+            return torch.stack((x0, x1, x2, x3)).T
+  
 
     def setRepetition(self, repetition):
         self.repetition = repetition

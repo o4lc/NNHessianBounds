@@ -98,8 +98,14 @@ class LipschitzBounding:
             term2 = 2 * (torch.abs(queryCoefficient[1]) * self.LipCnt + torch.abs(queryCoefficient[1] - queryCoefficient[0])) \
                         * (2 * torch.sqrt(torch.Tensor([2.])) * x0x1sumbound)
             term3 = 2 * (torch.abs(queryCoefficient[1]) * ubound + torch.abs(queryCoefficient[1] - queryCoefficient[0]) * x0bound)
-
             return deltaT * (term1 + term2 + term3)
+        
+        elif self.network.NLBench == 'ACC':
+            return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])) + 2 * self.calculateCurvatureConstant)
+        elif self.network.NLBench == 'TORA':
+            # print('-', self.calculatedCurvatureConstants)
+            return deltaT * (torch.abs(queryCoefficient[1]) * 0.1 + torch.abs(queryCoefficient[3]) * self.calculatedCurvatureConstants)
+
                                                               
     
 
@@ -169,31 +175,37 @@ class LipschitzBounding:
                             if j != numLayers - 1:
                                 SS.append(torch.abs(params[2*j]))
                             else:
-                                SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                                if self.network.isLinear:
+                                    SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                                else:
+                                    SS.append(torch.abs(params[2*j]).unsqueeze(0))
                         else:
                             if j != numLayers - 1:
                                 SS.append(g * torch.abs(params[2*j]) @ SS[-1])
                             else:
-                                SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
+                                if self.network.isLinear:
+                                    SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])   
+                                else:
+                                    SS.append(g * torch.abs(params[2*j]).unsqueeze(0) @ SS[-1])
                     S.append(SS[-1][0])
-            else:
-                # Using LipSDP for S
-                for i in range(numLayers - 1):
-                    if i == numLayers - 2:
-                        S.append(torch.abs(torch.Tensor(self.network.B.cpu().numpy() @ self.weights[-1])))
-                    else:
-                        temp_weight = self.weights[i+1:]
-                        alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
-                        # Should I run this with A, B == None?
-                        cc = queryCoefficient.unsqueeze(0).cpu().numpy()
-                        AA = np.zeros((self.weights[0].shape[1], len(temp_weight[0][0])))
-                        BB = self.network.B.cpu().numpy()
+            # else:
+            #     # Using LipSDP for S
+            #     for i in range(numLayers - 1):
+            #         if i == numLayers - 2:
+            #             S.append(torch.abs(torch.Tensor(self.network.B.cpu().numpy() @ self.weights[-1])))
+            #         else:
+            #             temp_weight = self.weights[i+1:]
+            #             alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
+            #             # Should I run this with A, B == None?
+            #             cc = queryCoefficient.unsqueeze(0).cpu().numpy()
+            #             AA = np.zeros((self.weights[0].shape[1], len(temp_weight[0][0])))
+            #             BB = self.network.B.cpu().numpy()
 
-                        self.startTime(timer, "LipSDP")
-                        S.append(torch.Tensor([lipSDP(temp_weight, alpha, beta,
-                                                        cc, AA, BB,
-                                                        verbose=self.sdpSolverVerbose)]).to(self.device))
-                        self.pauseTime(timer, "LipSDP")
+            #             self.startTime(timer, "LipSDP")
+            #             S.append(torch.Tensor([lipSDP(temp_weight, alpha, beta,
+            #                                             cc, AA, BB,
+            #                                             verbose=self.sdpSolverVerbose)]).to(self.device))
+            #             self.pauseTime(timer, "LipSDP")
 
             for l in range(numLayers-1):
                 summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
@@ -242,16 +254,22 @@ class LipschitzBounding:
                         if j != numLayers - 1:
                             SS.append(torch.abs(params[2*j]))
                         else:
-                            SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                            if self.network.isLinear:
+                                SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                            else:
+                                SS.append(torch.abs(params[2*j]).unsqueeze(0))
                     else:
                         if j != numLayers - 1:
                             SS.append(g * torch.abs(params[2*j]) @ SS[-1])
                         else:
-                            SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
+                            if self.network.isLinear:
+                                SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
+                            else:
+                                SS.append(g * torch.abs(params[2*j]).unsqueeze(0) @ SS[-1])
                 S.append(SS[-1][0])
+
             for l in range(numLayers-1):
                 summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
-
         if calculateFinalLayerLip:
             return h * summationTerm, r[-1]
         else:
@@ -550,7 +568,7 @@ class LipschitzBounding:
         x_center = (inputLowerBound + inputUpperBound) / 2.0
 
         curvatureMethod = [2]
-        if self.network.isLinear == False:
+        if self.network.isLinear == False or len(self.network.Linear) > 10:
             curvatureMethod = [1]
         if self.calculatedCurvatureConstants == []:
             m, M, lipcnt = torch.Tensor([-1]), torch.Tensor([-1]), torch.Tensor([-1])
@@ -563,7 +581,6 @@ class LipschitzBounding:
             if 2 in curvatureMethod:
                 M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
                                                                     inputLowerBound, inputUpperBound, timer)
-            # raise
             
             self.calculatedCurvatureConstants.append(torch.maximum(m, M))
             self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
