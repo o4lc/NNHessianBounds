@@ -67,10 +67,7 @@ class NeuralNetwork(nn.Module):
                     self.B[1] = 1
                 elif self.NLBench in ['B4', 'B5']:
                     self.B[2] = 1
-                # elif self.NLBench == 'TORA':
-                #     self.B[3] = 1
-                # elif self.NLBench == 'ACC':
-                #     self.B[5] = 2
+
         self.repetition = 1
 
     def load(self, path):
@@ -78,10 +75,20 @@ class NeuralNetwork(nn.Module):
         self.load_state_dict(stateDict)
 
     def nonLinFunc(self, x, u):
-        if self.NLBench == 'B2':
+        if self.NLBench == 'B1':
+            self.deltaT = 0.1
+            x0 = x[:, 0] + self.deltaT * (x[:, 1])
+            x1 = x[:, 1] + self.deltaT * (x[:, 1]**2 * u[:, 0] - x[:, 0])
+            return torch.stack((x0, x1)).T
+        elif self.NLBench == 'B2':
             self.deltaT = 0.1
             x0 = x[:, 0] + self.deltaT * (x[:, 1] - x[:, 0]**3)
             x1 = x[:, 1] + self.deltaT * u[:, 0]
+            return torch.stack((x0, x1)).T
+        elif self.NLBench == 'B3':
+            self.deltaT = 0.1
+            x0 = x[:, 0] + self.deltaT * (-x[:, 0]) * (0.1 + (x[:, 0] + x[:, 1])**2)
+            x1 = x[:, 1] + self.deltaT * (u[:, 0] + x[:, 0]) * (0.1 + (x[:, 0] + x[:, 1])**2)
             return torch.stack((x0, x1)).T
         elif self.NLBench == 'B4':
             self.deltaT = 0.01

@@ -165,10 +165,10 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 def main(Method = None):
     configFolder = "Config/"
     fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear', 'RandomNet' ,"test"]
-    fileName = fileName[2]
+    fileName = fileName[5]
     if fileName == "nonLinear":
-        fileName = ["B2", "B4", "B5", 'TORA', 'ACC']
-        fileName = fileName[0]
+        fileName = ["B1", "B2", "B3", "B4", "B5"]
+        fileName = fileName[2]
         configFolder += "nonLinear/"
 
 
@@ -340,7 +340,7 @@ def main(Method = None):
         pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData,
                                                                                            label_data if 'MnistS' in fileName else None)
         if verboseMultiHorizon and plotInitandHorizon:
-            plt.scatter(imageData[:1000, 0], imageData[:1000, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5, c='grey')
+            plt.scatter(imageData[:1000, 0], imageData[:1000, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
 
         numberOfInitialDirections = len(pcaDirections)
