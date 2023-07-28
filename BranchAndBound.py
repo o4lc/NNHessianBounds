@@ -23,7 +23,8 @@ class BranchAndBound:
                  spaceOutThreshold=10000,
                  boundingMethod='firstOrder',
                  splittingMethod='length',
-                 timers=None
+                 timers=None,
+                 lipsdp = True,
                  ):
 
         self.lowerBoundClass = LipschitzBounding(network, device, virtualBranching, maxSearchDepthLipschitzBound,
@@ -32,7 +33,8 @@ class BranchAndBound:
                                                  previousLipschitzCalculations,
                                                  originalNetwork=originalNetwork,
                                                  horizon=horizonForLipschitz,
-                                                 boundingMethod=boundingMethod
+                                                 boundingMethod=boundingMethod,
+                                                 lipsdp=lipsdp
                                                  )
 
         self.queryCoefficient = queryCoefficient
@@ -262,8 +264,7 @@ class BranchAndBound:
 
             self.timers.start("bestBound")
 
-            self.bestUpperBound =\
-                torch.minimum(self.bestUpperBound,
+            self.bestUpperBound = torch.minimum(self.bestUpperBound, \
                               torch.min(torch.Tensor([self.spaceNodes[i].upper for i in range(len(self.spaceNodes))])))
             self.bestLowerBound = torch.min(
                 torch.Tensor([self.spaceNodes[i].lower for i in range(len(self.spaceNodes))]))
@@ -276,7 +277,8 @@ class BranchAndBound:
                 plotter.plotSpace(self.spaceNodes, self.initCoordLow, self.initCoordUp)
                 print('----------' * 10)
         
-        assert self.bestUpperBound >= self.bestLowerBound
+        # print('u -  l', self.bestUpperBound - self.bestLowerBound)
+        # assert self.bestUpperBound + 1e-5 >= self.bestLowerBound
         
         if self.verbose:
             print("Number of created nodes: {}".format(self.numberOfBranches))

@@ -91,7 +91,7 @@ class Plotter():
 
 
 def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
-                     calculatedLowerBoundsforpcaDirections, Method = 'secondOrder', finalIter=False):
+                     calculatedLowerBoundsforpcaDirections, Method = 'secondOrder', finalIter=False, finalHorizon=1):
     ax = plt.gca()
     fig = plt.gcf()
     if True:
@@ -105,13 +105,13 @@ def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsF
         bb = np.array(bb)
         pltp = polytope.Polytope(AA, bb)
         if Method == 'secondOrder':
-            ax = pltp.plot(ax, alpha = 0.1, color='grey', edgecolor='black')
+            ax = pltp.plot(ax, alpha = 0.3, color='grey', edgecolor='black')
         else:  
             ax = pltp.plot(ax, alpha = 0.5, color='None', edgecolor='blue')
 
         if finalIter:
             plt.axis("equal")
-            if "robotarm" not in configFileToLoad.lower():
+            if "robotarm" not in configFileToLoad.lower() and finalHorizon < 11:
                 leg1 = plt.legend()
             # plot constraints
             if 'quad' in configFileToLoad.lower():
@@ -128,20 +128,57 @@ def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsF
                 ax.legend(custom_lines, ['ReachLipBnB', 'Our method'], loc=4)
                 plt.gca().add_artist(leg1)
 
-def verisigPlotCMP():
-    with open('./Utilities/B5.txt') as f:
+def SOTAPlotCMP(filename, verisig=True, numHorizons=10):
+    ax = plt.gca()
+    tmp = './Utilities/' + filename + '.txt'
+    with open(tmp) as f:
         lines = f.readlines()
 
-    for line in lines:
-        tmp = line.split(' ')
-        cleaned = []
-        for i in range(len(tmp)):
-            # print(tmp[i])
-            if tmp[i] in ['hold'] or 'clear' in tmp[i]:
-                break
-            if tmp[i] in [',', "'color'", '[', ']', 'plot(', "'[0", '0.4', "0]');\n"]:
-                pass
-            else:
-                cleaned.append((float(tmp[i])))
+    if not verisig:
+        if filename in ['B1', 'B3', 'B4']:
+            for i, line in enumerate(lines):
+                if i < 2 * numHorizons:
+                    tmp = line.split("#")
+                    if tmp[0] != '\n':
+                        rectangle = patches.Rectangle(((float(tmp[1])), float(tmp[2])), float(tmp[3]), float(tmp[4]),
+                                                        edgecolor='blue', facecolor="None", linewidth=2, alpha=0.3)
+                        ax.add_patch(rectangle)
+        
+        custom_lines = [Line2D([0], [0], color='b', lw=2, linestyle='--'),
+        Line2D([0], [0], color='grey', lw=2, linestyle='--')]
+        ax.legend(custom_lines, ['Poly. Zono.', 'Ours'], loc=4)
+        # plt.gca().add_artist(leg1)
+    else:
+        if filename in ['TORA', 'B2', 'B3', 'B5']:
+            for line in lines:
+                tmp = line.split(' ')
+                cleaned = []
+                for i in range(len(tmp)):
+                    # print(tmp[i])
+                    if tmp[i] in ['hold'] or 'clear' in tmp[i]:
+                        break
+                    if tmp[i] in [',', "'color'", '[', ']', 'plot(', "'[0", '0.4', "0]');\n"]:
+                        pass
+                    else:
+                        cleaned.append((float(tmp[i])))
+                else:
+                    plt.plot(cleaned[:9], cleaned[9:], '--', c='blue', alpha=0.2)
         else:
-            plt.plot(cleaned[:9], cleaned[9:], '--', c='black', alpha=0.2)
+            points = []
+            for line in lines:
+                if line != '\n':
+                    tmp = line.split(' ')
+                    points.append([float(tmp[0]), float(tmp[1][:-2])])
+                else:
+                    if len(points) > 1:
+                        points = np.array(points)
+                        plt.plot(points[:, 0], points[:, 1], '--', c='blue', alpha=0.2)
+                        points = []
+        
+        
+        # leg1 = plt.legend()
+        custom_lines = [Line2D([0], [0], color='b', lw=2, linestyle='--'),
+                Line2D([0], [0], color='grey', lw=2, linestyle='--')]
+        ax.legend(custom_lines, ['Verisig2', 'Ours'], loc=4)
+        # plt.gca().add_artist(leg1)
+            

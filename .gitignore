@@ -6,3 +6,7 @@
 
 # ignore ALL files in ANY directory named __PYCACHE__
 __pycache__/
+
+# ignore these files in the root directory
+inputZonotope.txt
+MatlabNLRunInterface.py

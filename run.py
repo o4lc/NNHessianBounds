@@ -13,10 +13,96 @@ import warnings
 from tqdm import tqdm
 import matplotlib.patches as patches
 import pdb
-from Utilities.Plotter import plotReachability, verisigPlotCMP
+from Utilities.Plotter import plotReachability, SOTAPlotCMP
+import sys
+import argparse
 
 torch.set_printoptions(precision=8)
 warnings.filterwarnings("ignore")
+
+def setArgs(args, configFile, Method=None):
+    configFolder = "Config/"
+    if configFile == None:
+        args.fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" ,
+                     "ACASXU", 'nonLinear', 'RandomNetTanh', 'RandomNetSig' ,"test"]
+        args.fileName = args.fileName[5]
+        if args.fileName == "nonLinear":
+            args.fileName = ["B1", "B2", "B3", "B4", "B5","ACC", "TORA"]
+            args.fileName = args.fileName[4]
+            configFolder += "nonLinear/"
+    else:
+        args.fileName = configFile
+        if 'B' in configFile or 'TORA' in configFile:
+            configFolder += "nonLinear/"
+
+
+    configFileToLoad = configFolder + args.fileName + ".json"
+
+    with open(configFileToLoad, 'r') as file:
+        config = json.load(file)
+
+        args.eps = [config['eps'] if args.eps is None else args.eps][0]
+        args.verboseMultiHorizon = [config['verboseMultiHorizon'] if args.verboseMultiHorizon is None else args.verboseMultiHorizon][0]
+        args.normToUseLipschitz = config['normToUseLipschitz']
+        args.useSdpForLipschitzCalculation = config['useSdpForLipschitzCalculation']
+        args.finalHorizon = [config['finalHorizon'] if args.finalHorizon is None else args.finalHorizon][0]
+        args.performMultiStepSingleHorizon = config['performMultiStepSingleHorizon']
+        args.plotProjectionsOfHigherDims = config['plotProjectionsOfHigherDims']
+        args.onlyPcaDirections = [config['onlyPcaDirections'] if args.onlyPcaDirections is None else args.onlyPcaDirections][0]
+        args.pathToStateDictionary = config['pathToStateDictionary']
+        args.fullLoop = config['fullLoop']
+        try:
+            args.initialZonotope = config['InitialZonotope']
+        except:
+            args.initialZonotope = False
+        try:
+            args.activation = config['activation']
+        except:
+            args.activation = 'tanh'
+        try:
+            args.isLinear = config['isLinear']
+        except:
+            args.isLinear = True
+        try:
+            args.splittingMethod = config['splittingMethod']
+        except:
+            args.splittingMethod = 'length'
+
+        if Method == None:
+            args.boundingMethod = config['boundingMethod']
+        else:
+            args.boundingMethod = Method
+        if config['A'] and not args.fullLoop:
+            A = torch.Tensor(config['A'])
+            B = torch.Tensor(config['B'])
+            c = torch.Tensor(config['c'])
+        else:
+            A = B = c = None
+        
+        if torch.cuda.is_available():
+            args.device = torch.device("cuda", 0)
+        else:
+            args.device = torch.device("cpu")
+
+        args.device = torch.device("cpu")
+
+        lowerCoordinate = torch.Tensor(config['lowerCoordinate'])
+        upperCoordinate = torch.Tensor(config['upperCoordinate'])
+        lowerCoordinate = lowerCoordinate.to(args.device)
+        upperCoordinate = upperCoordinate.to(args.device)
+
+        if not args.verboseMultiHorizon:
+            plotProjectionsOfHigherDims = False
+
+        if args.finalHorizon > 1 and args.performMultiStepSingleHorizon and\
+                (args.normToUseLipschitz != 2 or not args.useSdpForLipschitzCalculation):
+            raise ValueError
+
+        network = NeuralNetwork(args.pathToStateDictionary, A, B, c, activation=args.activation, loadOrGenerate=True, isLinear=args.isLinear)
+
+    return args, network, lowerCoordinate, upperCoordinate, configFileToLoad, config
+
+
 
 
 def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data = None):
@@ -43,11 +129,13 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
             pcaDirections.append(direction)
 
     elif label_data == None:
-        # numDirections = 8
-        # data_comp = np.array(
-        #     [np.array([np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)]) for i in range(numDirections)])
-        numDirections = imageData.shape[1]
-        data_comp = np.eye(numDirections)
+        if True:
+            numDirections = 8
+            data_comp = np.array(
+                [np.array([np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)]) for i in range(numDirections)])
+        else:
+            numDirections = imageData.shape[1]
+            data_comp = np.eye(numDirections)
         
         data_mean = np.mean(imageData.numpy(), 0)
         inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
@@ -84,11 +172,10 @@ def calculateDirectionsOfHigherDimProjections(currentPcaDirections, imageData):
     return indexToStartReadingBoundsForPlotting
 
 
-def solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network,
+def solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network, eps,
                                 plottingConstants, calculatedLowerBoundsforpcaDirections,
                                 originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate,
-                                boundingMethod, splittingMethod):
-    eps = config['eps']
+                                boundingMethod, splittingMethod, lipsdp):
     verbose = config['verbose']
     verboseEssential = config['verboseEssential']
     scoreFunction = config['scoreFunction']
@@ -150,7 +237,8 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
                             spaceOutThreshold=spaceOutThreshold,
                             boundingMethod=boundingMethod,
                             splittingMethod=splittingMethod,
-                            timers=timers
+                            timers=timers,
+                            lipsdp=lipsdp,
                             )
         lowerBound, upperBound, space_left = BB.run()
         plottingConstants[i] = -lowerBound
@@ -163,94 +251,21 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
 
 
 def main(Method = None):
-    configFolder = "Config/"
-    fileName = ["RobotArmS", "DoubleIntegratorS", "quadrotorS", "MnistS" , "ACASXU", 'nonLinear', 'RandomNet' ,"test"]
-    fileName = fileName[5]
-    if fileName == "nonLinear":
-        fileName = ["B1", "B2", "B3", "B4", "B5","ACC", "TORA"]
-        fileName = fileName[3]
-        configFolder += "nonLinear/"
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default=None, help='Name of Benchmark')
+    parser.add_argument('--eps', type=float, default=None, help='Accuracy of Method')
+    parser.add_argument('--verboseMultiHorizon', type=bool, default=None)
+    parser.add_argument('--finalHorizon', type=int, default=None, help='Number of Iterations')
+    parser.add_argument('--onlyPcaDirections', type=int, default=None)
+    parser.add_argument('--lipsdp', type=int, default=None, help='Use LipSDP or Half Method')
+    args = parser.parse_args()
 
+    if args.config is not None:
+        configFile = args.config
+        args, network, lowerCoordinate, upperCoordinate, configFileToLoad, configDict = setArgs(args, configFile, Method)
 
-    configFileToLoad = configFolder + fileName + ".json"
-
-    with open(configFileToLoad, 'r') as file:
-        config = json.load(file)
-
-    eps = config['eps']
-    verboseMultiHorizon = config['verboseMultiHorizon']
-    normToUseLipschitz = config['normToUseLipschitz']
-    useSdpForLipschitzCalculation = config['useSdpForLipschitzCalculation']
-    finalHorizon = config['finalHorizon']
-    performMultiStepSingleHorizon = config['performMultiStepSingleHorizon']
-    plotProjectionsOfHigherDims = config['plotProjectionsOfHigherDims']
-    onlyPcaDirections = config['onlyPcaDirections']
-    pathToStateDictionary = config['pathToStateDictionary']
-    fullLoop = config['fullLoop']
-    try:
-        initialZonotope = config['InitialZonotope']
-    except:
-        initialZonotope = False
-    try:
-        activation = config['activation']
-    except:
-        activation = 'relu'
-    try:
-        isLinear = config['isLinear']
-    except:
-        isLinear = True
-    try:
-        splittingMethod = config['splittingMethod']
-    except:
-        splittingMethod = 'length'
-
-    if Method == None:
-        boundingMethod = config['boundingMethod']
-    else:
-        boundingMethod = Method
-    if config['A'] and not fullLoop:
-        A = torch.Tensor(config['A'])
-        B = torch.Tensor(config['B'])
-        c = torch.Tensor(config['c'])
-    else:
-        A = B = c = None
-    try:
-        lowerCoordinate = torch.Tensor(config['lowerCoordinate'])
-        upperCoordinate = torch.Tensor(config['upperCoordinate'])
-    except:
-        trainTransform = transforms.ToTensor()
-        trainSet = torchvision.datasets.MNIST('data', train=True, transform=trainTransform, download=True)
-    
-        X_train = trainSet[0][0].reshape(28*28)
-        y_train = trainSet[0][1]
-        lowerCoordinate = torch.ones((784, )) / 20000 * -1 + torch.Tensor(X_train)
-        upperCoordinate = torch.ones((784, )) / 20000      + torch.Tensor(X_train)
-        label_data = y_train
-
-
-    if not verboseMultiHorizon:
-        plotProjectionsOfHigherDims = False
-
-    if finalHorizon > 1 and performMultiStepSingleHorizon and\
-            (normToUseLipschitz != 2 or not useSdpForLipschitzCalculation):
-        raise ValueError
-
-    if torch.cuda.is_available():
-        device = torch.device("cuda", 0)
-    else:
-        device = torch.device("cpu")
-
-    device = torch.device("cpu")
-    if False:
-        print(device)
-        print(' ')
-    
-    lowerCoordinate = lowerCoordinate.to(device)
-    upperCoordinate = upperCoordinate.to(device)
-
-    network = NeuralNetwork(pathToStateDictionary, A, B, c, activation=activation, loadOrGenerate=True, isLinear=isLinear)
     # @TODO: move this
-    if initialZonotope and True:
+    if args.initialZonotope and True:
         zonotopeMatrix = torch.Tensor([[1, 1, 1], 
                                         [-1, 0, 1]]) 
         # zonotopeMatrix /=  torch.linalg.norm(zonotopeMatrix, 2, 0, True)
@@ -265,29 +280,29 @@ def main(Method = None):
 
     horizonForLipschitz = 1
     originalNetworkZonotope = None
-    if performMultiStepSingleHorizon:
-        horizonForLipschitz = finalHorizon
-        network.setRepetition(finalHorizon)
-        finalHorizon = 1
+    if args.performMultiStepSingleHorizon:
+        horizonForLipschitz = args.finalHorizon
+        network.setRepetition(args.finalHorizon)
+        args.finalHorizon = 1
 
     dimZ = lowerCoordinate.shape[0]
     dim = network.Linear[0].weight.shape[1]
     outputDim = network.Linear[-1].weight.shape[0]
-    network.to(device)
+    network.to(args.device)
 
     if dim < 3:
-        plotProjectionsOfHigherDims = False
+        args.plotProjectionsOfHigherDims = False
 
     plottingData = {}
 
-    inputData = (upperCoordinate - lowerCoordinate) * torch.rand(10000, dimZ, device=device) \
+    inputData = (upperCoordinate - lowerCoordinate) * torch.rand(10000, dimZ, device=args.device) \
                                                         + lowerCoordinate
-    if initialZonotope:
+    if args.initialZonotope:
         inputPlotData = (inputData - zCenter) @ zonotopeMatrix.T + xCenter
     else:
         inputPlotData = inputData
 
-    if verboseMultiHorizon:
+    if args.verboseMultiHorizon:
         if plt.get_fignums():
             fig = plt.gcf()
             ax = plt.gca()
@@ -300,22 +315,21 @@ def main(Method = None):
             plt.scatter(inputPlotData[:, 0], inputPlotData[:, 1], marker='.', label='Initial', alpha=0.5)
     plottingData[0] = {"exactSet": inputData}
 
-    
     startTime = time.time()
     totalNumberOfBranches = 0
     totalLipSDPTime = 0
-    for iteration in tqdm(range(finalHorizon)):
+    for iteration in tqdm(range(args.finalHorizon)):
         inputDataVariable = Variable(inputData, requires_grad=False)
         # @TODO: move this
-        if initialZonotope and iteration == 0:
+        if args.initialZonotope and iteration == 0:
             with torch.no_grad():
                 networkZonotope = copy.deepcopy(network)
                 originalWeight0 = networkZonotope.Linear[0].weight
 
                 networkZonotope.Linear[0].weight = \
-                                torch.nn.parameter.Parameter((originalWeight0 @ zonotopeMatrix).float().to(device))
+                                torch.nn.parameter.Parameter((originalWeight0 @ zonotopeMatrix).float().to(args.device))
                 networkZonotope.Linear[0].bias += \
-                                torch.nn.parameter.Parameter((originalWeight0 @ (xCenter - zonotopeMatrix @ zCenter)).float().to(device))
+                                torch.nn.parameter.Parameter((originalWeight0 @ (xCenter - zonotopeMatrix @ zCenter)).float().to(args.device))
                 
                 networkZonotope.c += networkZonotope.A @ xCenter
                 networkZonotope.A @= zonotopeMatrix
@@ -332,21 +346,20 @@ def main(Method = None):
 
             originalNetworkZonotope = copy.deepcopy(networkZonotope)
 
-        
         with no_grad():
             imageData = networkZonotope.forward(inputDataVariable)
 
         plottingData[iteration + 1] = {"exactSet": imageData}
-        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(onlyPcaDirections, imageData,
-                                                                                           label_data if 'MnistS' in fileName else None)
-        if verboseMultiHorizon and plotInitandHorizon:
-            plt.scatter(imageData[:1000, 0], imageData[:1000, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
+        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(args.onlyPcaDirections, imageData, None)
+                                                                                           
+        if args.verboseMultiHorizon and plotInitandHorizon:
+            plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
 
         numberOfInitialDirections = len(pcaDirections)
         indexToStartReadingBoundsForPlotting = 0
         plottingDirections = pcaDirections
-        if plotProjectionsOfHigherDims and network.isLinear:
+        if args.plotProjectionsOfHigherDims and network.isLinear:
             indexToStartReadingBoundsForPlotting = calculateDirectionsOfHigherDimProjections(pcaDirections, imageData) 
 
         plottingData[iteration + 1]["A"] = pcaDirections
@@ -356,18 +369,18 @@ def main(Method = None):
         # pcaDirections = torch.from_numpy(np.array(pcaDirections))
         calculatedLowerBoundsforpcaDirections = torch.Tensor(np.zeros(len(pcaDirections)))
 
-
-        t1, timers = solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, networkZonotope,
+        t1, timers = solveSingleStepReachability(pcaDirections, imageData, configDict, iteration, args.device, networkZonotope, args.eps,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
-                                    originalNetworkZonotope, horizonForLipschitz, lowerCoordinate, upperCoordinate, boundingMethod, splittingMethod)
+                                    originalNetworkZonotope, horizonForLipschitz, lowerCoordinate, upperCoordinate, args.boundingMethod, 
+                                    args.splittingMethod, args.lipsdp)
         
         totalNumberOfBranches += t1
         totalLipSDPTime += timers['LipSDP'].totalTime
 
-        if finalHorizon > 1:
+        if args.finalHorizon > 1:
             rotation = nn.Linear(dim, dim)
-            rotation.weight = torch.nn.parameter.Parameter(torch.linalg.inv(torch.from_numpy(data_comp).float().to(device)))
-            rotation.bias = torch.nn.parameter.Parameter(torch.from_numpy(data_mean).float().to(device))
+            rotation.weight = torch.nn.parameter.Parameter(torch.linalg.inv(torch.from_numpy(data_comp).float().to(args.device)))
+            rotation.bias = torch.nn.parameter.Parameter(torch.from_numpy(data_mean).float().to(args.device))
             # print(rotation.weight, '\n', rotation.weight.T @ rotation.weight)
  
             networkZonotope.rotation = rotation
@@ -382,26 +395,28 @@ def main(Method = None):
                 upperCoordinate[i] = u - center
                 lowerCoordinate[i] = l - center
             
-            if initialZonotope:
+            if args.initialZonotope:
                 upperCoordinate = upperCoordinate[:dim]
                 lowerCoordinate = lowerCoordinate[:dim]
 
-        if verboseMultiHorizon:
+        if args.verboseMultiHorizon:
             plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
-                                calculatedLowerBoundsforpcaDirections, Method, finalIter = (iteration == (finalHorizon - 1)))
+                                calculatedLowerBoundsforpcaDirections, Method, finalIter = (iteration == (args.finalHorizon - 1)), 
+                                finalHorizon=args.finalHorizon)
     
     endTime = time.time()
-    if fileName == 'B5':
-        verisigPlotCMP()
-    print('The algorithm took (s):', endTime - startTime, 'with eps =', eps, ', LipSDP time (s):', totalLipSDPTime)
+    if args.fileName in ['B1', 'B2', 'B3', 'B4', 'B5', 'TORA']:
+        SOTAPlotCMP(args.fileName, verisig=False, numHorizons=args.finalHorizon)
+    print('The algorithm took (s):', endTime - startTime, 'with eps =', args.eps, ', LipSDP time (s):', totalLipSDPTime)
     print("Total number of branches: {}".format(totalNumberOfBranches))
-    torch.save(plottingData, "Output/reachCurv" + fileName)
-    plt.savefig("Output/reachCurv" + fileName + '.png')
-    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, splittingMethod
+    # torch.save(plottingData, "Output/reachCurv" + fileName)
+    plt.savefig("Output/reachCurv" + args.fileName + '.png')
+    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, args.splittingMethod
 
 
 if __name__ == '__main__':
-    for Method in ['secondOrder']:
+    Methods = ['secondOrder']
+    for Method in Methods:
         runTimes = []
         numberOfBrancehs = []
         lipSDPTimes = []

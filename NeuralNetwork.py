@@ -29,11 +29,11 @@ class NeuralNetwork(nn.Module):
                 *layers
             )
             self.load_state_dict(stateDictionary)
-            if 'random' in path:
-                self.Linear.append(activationF)
-                self.Linear.append(nn.Linear(2, 2))
-                self.Linear[-1].weight.data = torch.eye(2)
-                self.Linear[-1].bias.data = torch.zeros(2)
+            # if 'random' in path:
+            #     self.Linear.append(activationF)
+            #     self.Linear.append(nn.Linear(2, 2))
+            #     self.Linear[-1].weight.data = torch.eye(2)
+            #     self.Linear[-1].bias.data = torch.zeros(2)
 
         else:
             self.Linear = nn.Sequential(
@@ -71,28 +71,29 @@ class NeuralNetwork(nn.Module):
 
     def nonLinFunc(self, x, u):
         if self.NLBench == 'B1':
-            self.deltaT = 0.1
+            self.deltaT = 0.02
             x0 = x[:, 0] + self.deltaT * (x[:, 1])
             x1 = x[:, 1] + self.deltaT * (x[:, 1]**2 * u[:, 0] - x[:, 0])
             return torch.stack((x0, x1)).T
         elif self.NLBench == 'B2':
-            self.deltaT = 0.1
+            self.deltaT = 0.05
             x0 = x[:, 0] + self.deltaT * (x[:, 1] - x[:, 0]**3)
             x1 = x[:, 1] + self.deltaT * u[:, 0]
             return torch.stack((x0, x1)).T
         elif self.NLBench == 'B3':
-            self.deltaT = 0.1
+            self.deltaT = 0.01
             x0 = x[:, 0] + self.deltaT * (-x[:, 0]) * (0.1 + (x[:, 0] + x[:, 1])**2)
             x1 = x[:, 1] + self.deltaT * (u[:, 0] + x[:, 0]) * (0.1 + (x[:, 0] + x[:, 1])**2)
+            # x1 = x[:, 1] + self.deltaT * (u[:, 0] + x0) * (0.1 + (x0 + x[:, 1])**2)
             return torch.stack((x0, x1)).T
         elif self.NLBench == 'B4':
-            self.deltaT = 0.01
+            self.deltaT = 0.02
             x0 = x[:, 0] + self.deltaT * (-x[:, 0] + x[:, 1] - x[:, 2])
             x1 = x[:, 1] + self.deltaT * (-x[:, 0] * (x[:, 2] + 1) - x[:, 1])
             x2 = x[:, 2] + self.deltaT * (-x[:, 0] + u[:, 0])
             return torch.stack((x0, x1, x2)).T
         elif self.NLBench == 'B5':
-            self.deltaT = 0.005
+            self.deltaT = 0.01
             x0 = x[:, 0] + self.deltaT * (x[:, 0]**3 - x[:, 1])
             x1 = x[:, 1] + self.deltaT * (x[:,2])
             x2 = x[:, 2] + self.deltaT * (u[:, 0])
@@ -107,7 +108,7 @@ class NeuralNetwork(nn.Module):
             x5 = x[:, 5] + self.deltaT * (2 * u[:, 0] - 2 * x[:, 5] - x[:, 4]**2 / 1000)
             return torch.stack((x0, x1, x2, x3, x4, x5)).T  
         elif self.NLBench == 'TORA':
-            self.deltaT = 0.01
+            self.deltaT = 0.05
             x0 = x[:, 0] + self.deltaT * (x[:, 1])
             x1 = x[:, 1] + self.deltaT * (-x[:, 0] + 0.1*torch.sin(x[:, 2]))
             x2 = x[:, 2] + self.deltaT * (x[:, 3])

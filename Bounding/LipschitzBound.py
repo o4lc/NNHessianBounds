@@ -30,7 +30,8 @@ class LipschitzBounding:
                  originalNetwork=None,
                  horizon=1, 
                  activation='softplus',
-                 boundingMethod='firstOrder'):
+                 boundingMethod='firstOrder',
+                 lipsdp=True):
         self.network = network
         self.device = device
         if originalNetwork:
@@ -51,6 +52,7 @@ class LipschitzBounding:
         self.activation = activation
         self.boundingMethod = boundingMethod
         self.calculatedCurvatureConstants = []
+        self.lipsdp = lipsdp
 
     def calculateboundsCROWN(self, 
                             inputLowerBound: torch.Tensor,
@@ -85,25 +87,32 @@ class LipschitzBounding:
         x0bound = torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
         x1bound = torch.maximum(torch.abs(inputLowerBound[:, 1]), torch.abs(inputUpperBound[:, 1]))
         deltaT = self.network.deltaT
-
-        if self.network.NLBench in ['B2', 'B5']:
-            return  6 * deltaT * torch.abs(queryCoefficient[0]) * x0bound + self.network.deltaT * self.calculatedCurvatureConstants
-        elif self.network.NLBench == 'B4':
-            return torch.abs(queryCoefficient[1]) * deltaT + self.network.deltaT * self.calculatedCurvatureConstants
-        elif self.network.NLBench == 'B1':
-            return deltaT * torch.abs(queryCoefficient[1]) * (2 * ubound +  x1bound**2 * self.calculatedCurvatureConstants + 4 * x1bound * self.LipCnt)
+        # B1-B5
+        if self.network.NLBench == 'B1':
+            return deltaT * (2. * ubound + x1bound**2 * self.calculatedCurvatureConstants +\
+                                  4. * x1bound * self.LipCnt) * torch.abs(queryCoefficient[1])
+        elif self.network.NLBench in ['B2', 'B5']:
+            if self.network.NLBench in ['B2']:
+                curvcoef = torch.abs(queryCoefficient[1])
+            else:
+                curvcoef = torch.abs(queryCoefficient[2])
+            return  deltaT * (6. * torch.abs(queryCoefficient[0]) * x0bound + \
+                                curvcoef * self.calculatedCurvatureConstants)
         elif self.network.NLBench == 'B3':
             x0x1sumbound = torch.maximum(torch.abs(inputLowerBound[:, 0] + inputLowerBound[:, 1]), torch.abs(inputUpperBound[:, 0] + inputUpperBound[:, 1]))
-            term1 = torch.abs(queryCoefficient[1]) * self.calculatedCurvatureConstants * (0.1 + x0x1sumbound**2)
-            term2 = 2 * (torch.abs(queryCoefficient[1]) * self.LipCnt + torch.abs(queryCoefficient[1] - queryCoefficient[0])) \
+            termf = 4 * torch.abs(queryCoefficient[1] - queryCoefficient[0]) * \
+                        (2 * x0bound + x1bound + torch.sqrt(5 * x0bound**2 + 6*x0bound*x1bound + 2 * x1bound**2))
+            term1 = 2 * (torch.abs(queryCoefficient[1]) * self.LipCnt + torch.abs(queryCoefficient[1] - queryCoefficient[0])) \
                         * (2 * torch.sqrt(torch.Tensor([2.])) * x0x1sumbound)
+            term2 = torch.abs(queryCoefficient[1]) * self.calculatedCurvatureConstants * (0.1 + x0x1sumbound**2)
             term3 = 2 * (torch.abs(queryCoefficient[1]) * ubound + torch.abs(queryCoefficient[1] - queryCoefficient[0]) * x0bound)
-            return deltaT * (term1 + term2 + term3)
-        
+            return deltaT * (termf + term1 + term2 + term3)
+        elif self.network.NLBench == 'B4':
+            return deltaT * (torch.abs(queryCoefficient[2]) * self.calculatedCurvatureConstants)
+        # Others
         elif self.network.NLBench == 'ACC':
-            return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])) + 2 * self.calculateCurvatureConstant)
+            return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])) + 2 * self.calculatedCurvatureConstants)
         elif self.network.NLBench == 'TORA':
-            # print('-', self.calculatedCurvatureConstants)
             return deltaT * (torch.abs(queryCoefficient[1]) * 0.1 + torch.abs(queryCoefficient[3]) * self.calculatedCurvatureConstants)
 
                                                               
@@ -147,24 +156,21 @@ class LipschitzBounding:
                     cc = np.eye((temp_weight[0]).shape[1])
                     AA = None
                     BB = None
-                    if i == numLayers - 1:
-                        # @TODO possibel not to calculate the whole Lipschitz constant because it won't be used
+                    if (i == numLayers - 1) and self.network.isLinear:
+                        # Note that Lip of whole system is not used for Hessian bounds: calculateFinalLayerLip
                         cc = queryCoefficient.unsqueeze(0).cpu().numpy()
-                        # AA = self.network.A.cpu().numpy()
-                        # AA = np.zeros((len(temp_weight[-1]), self.weights[0].shape[1]))
                         BB = self.network.B.cpu().numpy()
-                    self.startTime(timer, "LipSDP")
 
+                    self.startTime(timer, "LipSDP")
                     if lipsdp == True:
-                        r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta,
-                                                        cc, AA, BB,
-                                                        verbose=self.sdpSolverVerbose)]).to(self.device)
+                        r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta, cc, AA, BB,
+                                                    verbose=self.sdpSolverVerbose)]).to(self.device)
                     else:
                         r[i] = torch.Tensor([self.calculateLocalLipschitzConstantSingleBatchNumpy(temp_weight, cc, AA, BB,
-                                                                                              normToUse=self.normToUse)[-1]]).to(self.device)
+                                                                            normToUse=self.normToUse)[-1]]).to(self.device)
                 
                     self.pauseTime(timer, "LipSDP")
-                    # print(r)
+
             S = []  
             if calculateSusingLipSDP == False:
                 # Using simple recursion for S
@@ -226,7 +232,6 @@ class LipschitzBounding:
             params = list(self.network.Linear.parameters()) 
             numLayers = len(params)//2
             summationTerm = 0
-
             r = torch.zeros((numLayers, 1)).to(self.device)
             for i in range(numLayers):
                 if i == 0:
@@ -244,8 +249,6 @@ class LipschitzBounding:
                             else:
                                 r[i] = g * torch.linalg.norm(params[2 * i], ord=2) * r[i - 1]
 
-            # print(r)
-            # print(self.network)
             S = []  
             for i in range(numLayers - 1):
                 SS = []
@@ -449,12 +452,10 @@ class LipschitzBounding:
                 self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
 
         elif self.boundingMethod == 'secondOrder':
-            # individual = True
             firstOrderAdditiveTerm = torch.Tensor([-1]).to(self.device)
             grad_x, dialation, dialation2, x_center = self.calculateAdditiveTermSecondOrder(inputLowerBound, inputUpperBound, \
                                                                                                          queryCoefficient, timer)
             self.startTime(timer, "lowerBound:lipschitzForwardPass")
-            # if individual:
             if self.network.isLinear:
                 additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
                 additiveTerm2 = self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2
@@ -463,10 +464,8 @@ class LipschitzBounding:
                 firstOrderAdditiveTerm = self.LipCnt * torch.linalg.norm(dialation, dim=1)
             else:
                 fullNLCurvatureConstant = self.calculateNLCurvature(queryCoefficient, inputLowerBound, inputUpperBound)
-
                 additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
                 additiveTerm2 = fullNLCurvatureConstant / 2 * torch.linalg.norm(dialation, dim=1)**2
-
                 secondOrderAdditiveTerm = additiveTerm1 + additiveTerm2
                 firstOrderAdditiveTerm = torch.Tensor([-1]).to(self.device) #@TODO: Fix this
 
@@ -477,6 +476,7 @@ class LipschitzBounding:
                     temp2 = temp1
                 else:
                     temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
+                
                 lowerBound = torch.maximum(temp1, temp2)
                 # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
             self.pauseTime(timer, "lowerBound:lipschitzForwardPass")
@@ -487,7 +487,6 @@ class LipschitzBounding:
         if virtualBranch and self.performVirtualBranching:
             lowerBound = torch.maximum(lowerBound, virtualBranchLowerBounds)
 
-        # print('******************', lowerBound)
         return lowerBound
 
     def handleVirtualBranching(self, inputLowerBound, inputUpperBound, queryCoefficient,
@@ -530,9 +529,6 @@ class LipschitzBounding:
         return virtualBranchLowerBounds
     
     def compareSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient, timer):
-        def J_c(x):
-            return self.network(x) @ queryCoefficient
-        
         if self.network.activation == 'softplus':
             g = 1.
             h = 0.25
@@ -580,7 +576,7 @@ class LipschitzBounding:
                 # print('--', M)
             if 2 in curvatureMethod:
                 M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
-                                                                    inputLowerBound, inputUpperBound, timer)
+                                                                    inputLowerBound, inputUpperBound, timer, lipsdp=self.lipsdp)
             
             self.calculatedCurvatureConstants.append(torch.maximum(m, M))
             self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
@@ -588,6 +584,8 @@ class LipschitzBounding:
 
         # because it takes the jacobian w.r.t all input output pairs
         grad_x = torch.sum(jacobian(J_c, (x_center)), axis=1).reshape(x_center.shape)
+        # print(grad_x)
+        # raise
         dialation = (inputUpperBound - inputLowerBound)/2
         dialation2 = dialation * torch.sign(grad_x)
         return grad_x, dialation, dialation2, x_center

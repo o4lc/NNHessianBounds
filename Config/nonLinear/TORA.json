@@ -1,5 +1,5 @@
 {
-    "eps": 0.01,
+    "eps": 0.001,
     "verbose": 0,
     "verboseMultiHorizon": true,
     "verboseEssential": 0,
@@ -12,7 +12,7 @@
     "useTwoNormDilation": false,
     "useSdpForLipschitzCalculation": true,
     "lipschitzSdpSolverVerbose": false,
-    "finalHorizon": 1,
+    "finalHorizon": 20,
     "InitialZonotope": false,
     "initialGD": false,
     "performMultiStepSingleHorizon": false,
