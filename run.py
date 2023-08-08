@@ -105,7 +105,7 @@ def setArgs(args, configFile, Method=None):
 
 
 
-def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data = None):
+def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data = None, network = None):
     data_mean = None
     inputData = None
     pcaDirections = []
@@ -122,14 +122,14 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
         data_comp = pca.components_
 
 
-        inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
+        inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy()).T).T.float()
         # print(np.linalg.norm(data_comp, 2, 1))
         for direction in data_comp:
             pcaDirections.append(-direction)
             pcaDirections.append(direction)
 
     elif label_data == None:
-        if True:
+        if network.isLinear:
             numDirections = 8
             data_comp = np.array(
                 [np.array([np.cos(i * np.pi / numDirections), np.sin(i * np.pi / numDirections)]) for i in range(numDirections)])
@@ -138,7 +138,7 @@ def calculateDirectionsOfOptimization(onlyPcaDirections, imageData, label_data =
             data_comp = np.eye(numDirections)
         
         data_mean = np.mean(imageData.numpy(), 0)
-        inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy() - data_mean).T).T.float()
+        inputData = torch.from_numpy(data_comp @ (imageData.cpu().numpy()).T).T.float()
         for direction in data_comp:
             pcaDirections.append(-direction)
             pcaDirections.append(direction)
@@ -350,10 +350,11 @@ def main(Method = None):
             imageData = networkZonotope.forward(inputDataVariable)
 
         plottingData[iteration + 1] = {"exactSet": imageData}
-        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(args.onlyPcaDirections, imageData, None)
+        pcaDirections, data_comp, data_mean, inputData = calculateDirectionsOfOptimization(args.onlyPcaDirections, imageData, None, network=networkZonotope)
                                                                                            
         if args.verboseMultiHorizon and plotInitandHorizon:
-            plt.scatter(imageData[:, 0], imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
+            plt.scatter(imageData[:, 0],
+                         imageData[:, 1], marker='.', label='Horizon ' + str(iteration + 1), alpha=0.5)
 
 
         numberOfInitialDirections = len(pcaDirections)
@@ -380,18 +381,19 @@ def main(Method = None):
         if args.finalHorizon > 1:
             rotation = nn.Linear(dim, dim)
             rotation.weight = torch.nn.parameter.Parameter(torch.linalg.inv(torch.from_numpy(data_comp).float().to(args.device)))
-            rotation.bias = torch.nn.parameter.Parameter(torch.from_numpy(data_mean).float().to(args.device))
+            # rotation.bias = torch.nn.parameter.Parameter(torch.from_numpy(data_mean).float().to(args.device))
+            rotation.bias = torch.nn.parameter.Parameter(torch.zeros(dim).float().to(args.device))
             # print(rotation.weight, '\n', rotation.weight.T @ rotation.weight)
  
             networkZonotope.rotation = rotation
 
-            centers = []
+
             for i, component in enumerate(data_comp):
                 u = -calculatedLowerBoundsforpcaDirections[2 * i]
                 l = calculatedLowerBoundsforpcaDirections[2 * i + 1]
                 # center = (u + l) / 2
                 center = component @ data_mean
-                centers.append(center)
+                center=0
                 upperCoordinate[i] = u - center
                 lowerCoordinate[i] = l - center
             

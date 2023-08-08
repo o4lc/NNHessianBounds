@@ -31,7 +31,10 @@ class LipschitzBounding:
                  horizon=1, 
                  activation='softplus',
                  boundingMethod='firstOrder',
-                 lipsdp=True):
+                 lipsdp=True,
+                 coordLow = None,
+                 coordUp = None):
+        
         self.network = network
         self.device = device
         if originalNetwork:
@@ -53,6 +56,8 @@ class LipschitzBounding:
         self.boundingMethod = boundingMethod
         self.calculatedCurvatureConstants = []
         self.lipsdp = lipsdp
+        self.coordLow=coordLow
+        self.coordUp=coordUp
 
     def calculateboundsCROWN(self, 
                             inputLowerBound: torch.Tensor,
@@ -84,8 +89,10 @@ class LipschitzBounding:
                                                                     self.network.activation)
         
         ubound = torch.Tensor(np.maximum(np.abs(lowerBounds[-1]), np.abs(upperBounds[-1])))
-        x0bound = torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
-        x1bound = torch.maximum(torch.abs(inputLowerBound[:, 1]), torch.abs(inputUpperBound[:, 1]))
+        # x0bound = torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
+        # x1bound = torch.maximum(torch.abs(inputLowerBound[:, 1]), torch.abs(inputUpperBound[:, 1]))
+        x0bound = torch.maximum(torch.abs(self.coordLow[0]), torch.abs(self.coordUp[0]))
+        x1bound = torch.maximum(torch.abs(self.coordLow[1]), torch.abs(self.coordUp[1]))
         deltaT = self.network.deltaT
         # B1-B5
         if self.network.NLBench == 'B1':
@@ -96,6 +103,8 @@ class LipschitzBounding:
                 curvcoef = torch.abs(queryCoefficient[1])
             else:
                 curvcoef = torch.abs(queryCoefficient[2])
+            
+            
             return  deltaT * (6. * torch.abs(queryCoefficient[0]) * x0bound + \
                                 curvcoef * self.calculatedCurvatureConstants)
         elif self.network.NLBench == 'B3':
@@ -476,7 +485,7 @@ class LipschitzBounding:
                     temp2 = temp1
                 else:
                     temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
-                
+
                 lowerBound = torch.maximum(temp1, temp2)
                 # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
             self.pauseTime(timer, "lowerBound:lipschitzForwardPass")

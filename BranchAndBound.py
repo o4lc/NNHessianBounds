@@ -34,7 +34,9 @@ class BranchAndBound:
                                                  originalNetwork=originalNetwork,
                                                  horizon=horizonForLipschitz,
                                                  boundingMethod=boundingMethod,
-                                                 lipsdp=lipsdp
+                                                 lipsdp=lipsdp,
+                                                 coordLow = coordLow,
+                                                 coordUp = coordUp
                                                  )
 
         self.queryCoefficient = queryCoefficient
@@ -278,7 +280,7 @@ class BranchAndBound:
                 print('----------' * 10)
         
         # print('u -  l', self.bestUpperBound - self.bestLowerBound)
-        # assert self.bestUpperBound + 1e-5 >= self.bestLowerBound
+        assert self.bestUpperBound + 1e-6 >= self.bestLowerBound
         
         if self.verbose:
             print("Number of created nodes: {}".format(self.numberOfBranches))
