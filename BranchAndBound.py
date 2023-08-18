@@ -24,7 +24,7 @@ class BranchAndBound:
                  boundingMethod='firstOrder',
                  splittingMethod='length',
                  timers=None,
-                 lipsdp = True,
+                 lipMethod = 1,
                  ):
 
         self.lowerBoundClass = LipschitzBounding(network, device, virtualBranching, maxSearchDepthLipschitzBound,
@@ -34,7 +34,7 @@ class BranchAndBound:
                                                  originalNetwork=originalNetwork,
                                                  horizon=horizonForLipschitz,
                                                  boundingMethod=boundingMethod,
-                                                 lipsdp=lipsdp,
+                                                 lipMethod=lipMethod,
                                                  coordLow = coordLow,
                                                  coordUp = coordUp
                                                  )
@@ -279,7 +279,6 @@ class BranchAndBound:
                 plotter.plotSpace(self.spaceNodes, self.initCoordLow, self.initCoordUp)
                 print('----------' * 10)
         
-        # print('u -  l', self.bestUpperBound - self.bestLowerBound)
         assert self.bestUpperBound + 1e-6 >= self.bestLowerBound
         
         if self.verbose:

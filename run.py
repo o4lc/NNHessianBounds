@@ -42,6 +42,7 @@ def setArgs(args, configFile, Method=None):
         config = json.load(file)
 
         args.eps = [config['eps'] if args.eps is None else args.eps][0]
+        args.lipMethod = [config['lipMethod'] if args.lipMethod is None else args.lipMethod][0]
         args.verboseMultiHorizon = [config['verboseMultiHorizon'] if args.verboseMultiHorizon is None else args.verboseMultiHorizon][0]
         args.normToUseLipschitz = config['normToUseLipschitz']
         args.useSdpForLipschitzCalculation = config['useSdpForLipschitzCalculation']
@@ -67,7 +68,6 @@ def setArgs(args, configFile, Method=None):
             args.splittingMethod = config['splittingMethod']
         except:
             args.splittingMethod = 'length'
-
         if Method == None:
             args.boundingMethod = config['boundingMethod']
         else:
@@ -175,7 +175,7 @@ def calculateDirectionsOfHigherDimProjections(currentPcaDirections, imageData):
 def solveSingleStepReachability(pcaDirections, imageData, config, iteration, device, network, eps,
                                 plottingConstants, calculatedLowerBoundsforpcaDirections,
                                 originalNetwork, horizonForLipschitz, lowerCoordinate, upperCoordinate,
-                                boundingMethod, splittingMethod, lipsdp):
+                                boundingMethod, splittingMethod, lipMethod):
     verbose = config['verbose']
     verboseEssential = config['verboseEssential']
     scoreFunction = config['scoreFunction']
@@ -238,7 +238,7 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
                             boundingMethod=boundingMethod,
                             splittingMethod=splittingMethod,
                             timers=timers,
-                            lipsdp=lipsdp,
+                            lipMethod=lipMethod,
                             )
         lowerBound, upperBound, space_left = BB.run()
         plottingConstants[i] = -lowerBound
@@ -257,12 +257,13 @@ def main(Method = None):
     parser.add_argument('--verboseMultiHorizon', type=bool, default=None)
     parser.add_argument('--finalHorizon', type=int, default=None, help='Number of Iterations')
     parser.add_argument('--onlyPcaDirections', type=int, default=None)
-    parser.add_argument('--lipsdp', type=int, default=None, help='Use LipSDP or Half Method')
+    parser.add_argument('--lipMethod', type=int, default=None, help='Use LipSDP or Half Method')
     args = parser.parse_args()
 
     if args.config is not None:
         configFile = args.config
         args, network, lowerCoordinate, upperCoordinate, configFileToLoad, configDict = setArgs(args, configFile, Method)
+
 
     # @TODO: move this
     if args.initialZonotope and True:
@@ -373,7 +374,7 @@ def main(Method = None):
         t1, timers = solveSingleStepReachability(pcaDirections, imageData, configDict, iteration, args.device, networkZonotope, args.eps,
                                     plottingConstants, calculatedLowerBoundsforpcaDirections,
                                     originalNetworkZonotope, horizonForLipschitz, lowerCoordinate, upperCoordinate, args.boundingMethod, 
-                                    args.splittingMethod, args.lipsdp)
+                                    args.splittingMethod, args.lipMethod)
         
         totalNumberOfBranches += t1
         totalLipSDPTime += timers['LipSDP'].totalTime

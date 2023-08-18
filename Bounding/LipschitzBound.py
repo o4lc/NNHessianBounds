@@ -31,7 +31,7 @@ class LipschitzBounding:
                  horizon=1, 
                  activation='softplus',
                  boundingMethod='firstOrder',
-                 lipsdp=True,
+                 lipMethod=1,
                  coordLow = None,
                  coordUp = None):
         
@@ -55,31 +55,31 @@ class LipschitzBounding:
         self.activation = activation
         self.boundingMethod = boundingMethod
         self.calculatedCurvatureConstants = []
-        self.lipsdp = lipsdp
+        self.lipMethod = lipMethod
         self.coordLow=coordLow
         self.coordUp=coordUp
 
-    def calculateboundsCROWN(self, 
-                            inputLowerBound: torch.Tensor,
-                            inputUpperBound: torch.Tensor,
-                            queryCoefficient: torch.Tensor):
+    # def calculateboundsCROWN(self, 
+    #                         inputLowerBound: torch.Tensor,
+    #                         inputUpperBound: torch.Tensor,
+    #                         queryCoefficient: torch.Tensor):
         
-        # Creating c^T @ Network
-        model = copy.deepcopy(self.network)
-        model.A = (queryCoefficient.unsqueeze(0) @ model.A)
-        model.B = (queryCoefficient.unsqueeze(0) @ model.B)
-        model.c = (queryCoefficient @ model.c)
+    #     # Creating c^T @ Network
+    #     model = copy.deepcopy(self.network)
+    #     model.A = (queryCoefficient.unsqueeze(0) @ model.A)
+    #     model.B = (queryCoefficient.unsqueeze(0) @ model.B)
+    #     model.c = (queryCoefficient @ model.c)
 
-        my_input = torch.Tensor((inputLowerBound + inputUpperBound) / 2)
-        # Wrap the model with auto_LiRPA.
-        model = BoundedModule(model, my_input)
-        # Define perturbation. Here we add Linf perturbation to input data.
-        ptb = PerturbationLpNorm(norm=np.Inf, eps=torch.Tensor(torch.Tensor((-inputLowerBound + inputUpperBound) / 2)).to(self.device))
-        # Make the input a BoundedTensor with the pre-defined perturbation.
-        my_input = BoundedTensor(my_input, ptb)
-        with torch.no_grad():
-            lb, ub = model.compute_bounds(x=(my_input,), method="CROWN")
-        return lb.reshape(-1, ), ub.reshape(-1, )
+    #     my_input = torch.Tensor((inputLowerBound + inputUpperBound) / 2)
+    #     # Wrap the model with auto_LiRPA.
+    #     model = BoundedModule(model, my_input)
+    #     # Define perturbation. Here we add Linf perturbation to input data.
+    #     ptb = PerturbationLpNorm(norm=np.Inf, eps=torch.Tensor(torch.Tensor((-inputLowerBound + inputUpperBound) / 2)).to(self.device))
+    #     # Make the input a BoundedTensor with the pre-defined perturbation.
+    #     my_input = BoundedTensor(my_input, ptb)
+    #     with torch.no_grad():
+    #         lb, ub = model.compute_bounds(x=(my_input,), method="CROWN")
+    #     return lb.reshape(-1, ), ub.reshape(-1, )
 
     def calculateNLCurvature(self, queryCoefficient, inputLowerBound, inputUpperBound):
         # Calculate Bound on Control Signal using IBP
@@ -127,165 +127,131 @@ class LipschitzBounding:
                                                               
     
 
-    def calculateCurvatureConstantGeneralLipSDP(self,
-                                                queryCoefficient: torch.Tensor,
-                                                g: float,
-                                                h: float,
-                                                inputLowerBound: torch.Tensor,
-                                                inputUpperBound: torch.Tensor,
-                                                timer,
-                                                lipsdp=True):
+    def calculateCurvatureConstantGeneral(self,
+                                            queryCoefficient: torch.Tensor,
+                                            g: float,
+                                            h: float,
+                                            inputLowerBound: torch.Tensor,
+                                            inputUpperBound: torch.Tensor,
+                                            timer,
+                                            lipMethod=1,
+                                            local=True):
         ''' 
         In this section, haveing a closed loop system is meaning-less during calculations of subs-networks
         Knowing that the hessian of the Ax+Bu is the same as Bu ... therefore, we can calculate the curvature
         without having the closed loop system
         We concider BW^L as the final layer weight.
         '''
-        calculateFinalLayerLip = False
-        if self.network.isLinear == False:
+        calculateFinalLayerLip = True
+        if self.network.isLinear == False or lipMethod == 2:
             calculateFinalLayerLip = True
-        calculateSusingLipSDP = False
         with torch.no_grad():
             params = list(self.network.Linear.parameters()) 
             numLayers = len(params)//2
             summationTerm = 0
 
             r = torch.zeros((numLayers, 1)).to(self.device)
-            for i in range(numLayers - (1 * (1 - calculateFinalLayerLip))):
-                if i == 0:
-                    r[i] = torch.linalg.norm(params[2 * i], ord=2)
-                else:
-                    temp_weight = self.weights[:i+1]
-                    temp_biases = self.biases[:i+1]
-                    alpha, beta = self.calculateMinMaxSlopes(temp_weight ,
-                                                                inputLowerBound, inputUpperBound,
-                                                                self.network.activation, 
-                                                                temp_biases)
-                    
-                    cc = np.eye((temp_weight[0]).shape[1])
-                    AA = None
-                    BB = None
-                    if (i == numLayers - 1) and self.network.isLinear:
-                        # Note that Lip of whole system is not used for Hessian bounds: calculateFinalLayerLip
-                        cc = queryCoefficient.unsqueeze(0).cpu().numpy()
-                        BB = self.network.B.cpu().numpy()
-
-                    self.startTime(timer, "LipSDP")
-                    if lipsdp == True:
-                        r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta, cc, AA, BB,
-                                                    verbose=self.sdpSolverVerbose)]).to(self.device)
-                    else:
-                        r[i] = torch.Tensor([self.calculateLocalLipschitzConstantSingleBatchNumpy(temp_weight, cc, AA, BB,
-                                                                            normToUse=self.normToUse)[-1]]).to(self.device)
+            r[0] = torch.linalg.norm(params[0], ord=2)
+            for i in range(1, numLayers - (1 * (1 - calculateFinalLayerLip))):
+                temp_weight = self.weights[:i+1]
+                temp_biases = self.biases[:i+1]
+                alpha, beta = self.calculateMinMaxSlopes(temp_weight ,
+                                                            inputLowerBound, inputUpperBound,
+                                                            self.network.activation, 
+                                                            temp_biases)
                 
-                    self.pauseTime(timer, "LipSDP")
+                cc = np.eye((temp_weight[-1]).shape[0])
+                AA = None
+                BB = None
+                if (i == numLayers - 1) and self.network.isLinear:
+                    # Note that Lip of whole system is not used for Hessian bounds: calculateFinalLayerLip
+                    cc = queryCoefficient.unsqueeze(0).cpu().numpy()
+                    BB = self.network.B.cpu().numpy()
+                    # A is passed here just so that the Lipschitz is valid for the calculation of ICRA
+                    AA = self.network.A.cpu().numpy()
+
+                self.startTime(timer, "LipSDP")
+                if lipMethod == 1:
+                    # LipSDP
+                    if local:
+                        r[i] = torch.Tensor([lipSDP(temp_weight, alpha, beta, cc, AA, BB,
+                                                verbose=self.sdpSolverVerbose)]).to(self.device)
+                    else:
+                        r[i] = torch.Tensor([lipSDP(temp_weight, np.zeros((len(alpha), 1)), np.ones((len(alpha), 1)),  cc, AA, BB,
+                                                verbose=self.sdpSolverVerbose)]).to(self.device)
+                    
+                elif lipMethod == 2:
+                    # LipLT
+                    if local:
+                        r[i] = torch.Tensor([self.calculateLocalLipLT(temp_weight, alpha, beta, cc, AA, BB,
+                                                                    normToUse=2)[-1]]).to(self.device)
+                    else:
+                        r[i] = torch.Tensor([self.calculateLocalLipLT(temp_weight, np.zeros((len(alpha), 1)), np.ones((len(alpha), 1)), cc, AA, BB,
+                                                                    normToUse=2)[-1]]).to(self.device)
+                        # r[i] = torch.Tensor([self.calculateLocalLipschitzConstantSingleBatchNumpy(temp_weight, cc, AA, BB,
+                        #                                                         normToUse=2)[-1]]).to(self.device)
+                        
+                else:
+                    # Naive Lip
+                    if local:
+                        r[i] = torch.Tensor([self.calculateNaiveLip(temp_weight, beta, 
+                                                                    cc, AA, BB, normToUse=2)[-1]]).to(self.device)
+                    else:
+                        r[i] = torch.Tensor([self.calculateNaiveLip(temp_weight, np.ones((len(alpha), 1)), 
+                                                                    cc, AA, BB, normToUse=2)[-1]]).to(self.device)
+
+                    
+                self.pauseTime(timer, "LipSDP")
 
             S = []  
-            if calculateSusingLipSDP == False:
+            if lipMethod in [0, 1, 2]:
                 # Using simple recursion for S
                 for i in range(numLayers - 1):
                     SS = []
                     for j in range(i+1, numLayers): 
+                        # print('i,j', i, j)
                         if i == j - 1:
-                            if j != numLayers - 1:
+                            if self.network.isLinear and j == numLayers - 1:
+                                SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
+                            else:
                                 SS.append(torch.abs(params[2*j]))
-                            else:
-                                if self.network.isLinear:
-                                    SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
-                                else:
-                                    SS.append(torch.abs(params[2*j]).unsqueeze(0))
                         else:
-                            if j != numLayers - 1:
-                                SS.append(g * torch.abs(params[2*j]) @ SS[-1])
+                            if self.network.isLinear and j == numLayers - 1:
+                                SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])   
                             else:
-                                if self.network.isLinear:
-                                    SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])   
-                                else:
-                                    SS.append(g * torch.abs(params[2*j]).unsqueeze(0) @ SS[-1])
-                    S.append(SS[-1][0])
-            # else:
-            #     # Using LipSDP for S
-            #     for i in range(numLayers - 1):
-            #         if i == numLayers - 2:
-            #             S.append(torch.abs(torch.Tensor(self.network.B.cpu().numpy() @ self.weights[-1])))
-            #         else:
-            #             temp_weight = self.weights[i+1:]
-            #             alpha, beta = self.calculateMinMaxSlopes(temp_weight ,[], [], self.network.activation)
-            #             # Should I run this with A, B == None?
-            #             cc = queryCoefficient.unsqueeze(0).cpu().numpy()
-            #             AA = np.zeros((self.weights[0].shape[1], len(temp_weight[0][0])))
-            #             BB = self.network.B.cpu().numpy()
+                                SS.append(g * torch.abs(params[2*j]) @ SS[-1])
 
-            #             self.startTime(timer, "LipSDP")
-            #             S.append(torch.Tensor([lipSDP(temp_weight, alpha, beta,
-            #                                             cc, AA, BB,
-            #                                             verbose=self.sdpSolverVerbose)]).to(self.device))
-            #             self.pauseTime(timer, "LipSDP")
-
+                    S.append(torch.max(torch.Tensor(SS[-1][0])))
+                    
+            else:
+                # raise Exception("Not implemented")
+                # Using LipLT for S
+                for i in range(numLayers - 1):
+                    temp_weight = self.weights[i+1:]
+                    temp_biases = self.biases[i+1:]
+                    # alpha, beta = self.calculateMinMaxSlopes(temp_weight ,torch.zeros((1, temp_weight[0].shape[1])), 
+                    #                                             g * torch.ones((1, temp_weight[0].shape[1])), self.network.activation, temp_biases)
+                    # A doesn't matter for Hessian bounds, but c^TB is important
+                    cc = queryCoefficient.unsqueeze(0).cpu().numpy()
+                    AA = None
+                    BB = self.network.B.cpu().numpy()
+                    self.startTime(timer, "LipSDP")
+                    if local:
+                        S.append(torch.Tensor([self.calculateLocalLipLT(temp_weight, alpha, 
+                                                            beta, cc, AA, BB, normToUse=np.inf)[-1]]).to(self.device))
+                    else:
+                        S.append(torch.Tensor([self.calculateLocalLipLT(temp_weight, None, 
+                                                            None, cc, AA, BB, normToUse=np.inf)[-1]]).to(self.device))
+                    self.pauseTime(timer, "LipSDP")
+            
             for l in range(numLayers-1):
-                summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
+                summationTerm += r[l]**2 * S[l]
             
         if calculateFinalLayerLip:
             return h * summationTerm, r[-1]
         else:
             return h * summationTerm, torch.Tensor([-1]).to(self.device)
     
-    def calculateCurvatureConstantGeneral(self, 
-                                            queryCoefficient: torch.Tensor,
-                                            g: float,
-                                            h: float):
-        calculateFinalLayerLip = False
-        if self.network.isLinear == False:
-            calculateFinalLayerLip = True
-        with torch.no_grad():
-            params = list(self.network.Linear.parameters()) 
-            numLayers = len(params)//2
-            summationTerm = 0
-            r = torch.zeros((numLayers, 1)).to(self.device)
-            for i in range(numLayers):
-                if i == 0:
-                    r[i] = torch.linalg.norm(params[2 * i], ord=2)
-                else:
-                    if i < numLayers - 1:
-                        r[i] = g * torch.linalg.norm(params[2 * i], ord=2) * r[i - 1]
-                    else:
-                        if calculateFinalLayerLip == False:
-                            continue
-                        else:
-                            if self.network.isLinear:
-                                r[i] = g * torch.linalg.norm(queryCoefficient @ self.network.B  @ params[2 * i], ord=2) * r[i - 1] \
-                                                + torch.linalg.norm(self.network.A, ord=2)
-                            else:
-                                r[i] = g * torch.linalg.norm(params[2 * i], ord=2) * r[i - 1]
-
-            S = []  
-            for i in range(numLayers - 1):
-                SS = []
-                for j in range(i+1, numLayers): 
-                    if i == j - 1:
-                        if j != numLayers - 1:
-                            SS.append(torch.abs(params[2*j]))
-                        else:
-                            if self.network.isLinear:
-                                SS.append(torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0))
-                            else:
-                                SS.append(torch.abs(params[2*j]).unsqueeze(0))
-                    else:
-                        if j != numLayers - 1:
-                            SS.append(g * torch.abs(params[2*j]) @ SS[-1])
-                        else:
-                            if self.network.isLinear:
-                                SS.append(g * torch.abs(queryCoefficient @ self.network.B  @ params[2*j]).unsqueeze(0) @ SS[-1])
-                            else:
-                                SS.append(g * torch.abs(params[2*j]).unsqueeze(0) @ SS[-1])
-                S.append(SS[-1][0])
-
-            for l in range(numLayers-1):
-                summationTerm += r[l]**2 * torch.max(torch.Tensor(S[l]))
-        if calculateFinalLayerLip:
-            return h * summationTerm, r[-1]
-        else:
-            return h * summationTerm, torch.Tensor([-1]).to(self.device)
     def calculateCurvatureConstant(self,
                                    queryCoefficient: torch.Tensor,
                                    g: float,
@@ -467,14 +433,15 @@ class LipschitzBounding:
             self.startTime(timer, "lowerBound:lipschitzForwardPass")
             if self.network.isLinear:
                 additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
-                additiveTerm2 = self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1)**2
+                additiveTerm2 = self.calculatedCurvatureConstants / 2 * torch.linalg.norm(dialation, dim=1, ord=self.normToUse)**2
 
                 secondOrderAdditiveTerm = additiveTerm1 + additiveTerm2
-                firstOrderAdditiveTerm = self.LipCnt * torch.linalg.norm(dialation, dim=1)
+                firstOrderAdditiveTerm = self.LipCnt * torch.linalg.norm(dialation, dim=1, ord=self.normToUse)
+                
             else:
                 fullNLCurvatureConstant = self.calculateNLCurvature(queryCoefficient, inputLowerBound, inputUpperBound)
                 additiveTerm1 = torch.sum(grad_x * dialation2, axis=1)
-                additiveTerm2 = fullNLCurvatureConstant / 2 * torch.linalg.norm(dialation, dim=1)**2
+                additiveTerm2 = fullNLCurvatureConstant / 2 * torch.linalg.norm(dialation, dim=1, ord=self.normToUse)**2
                 secondOrderAdditiveTerm = additiveTerm1 + additiveTerm2
                 firstOrderAdditiveTerm = torch.Tensor([-1]).to(self.device) #@TODO: Fix this
 
@@ -485,6 +452,7 @@ class LipschitzBounding:
                     temp2 = temp1
                 else:
                     temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
+
 
                 lowerBound = torch.maximum(temp1, temp2)
                 # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
@@ -548,12 +516,29 @@ class LipschitzBounding:
             g = 1.
             h = 0.7699
 
-        M1 = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h)
-        M2, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
-                                                                        inputLowerBound, inputUpperBound, timer, lipsdp=True)
-        M3 = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
-                                                                        inputLowerBound, inputUpperBound, timer, lipsdp=False)
-        return M1, M2, M3
+        M1, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer, lipMethod=0,
+                                                                        local=False)
+        M2, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer, lipMethod=0,
+                                                                        local=True)
+        M3, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer, lipMethod=1,
+                                                                        local=False)
+        a = time.time()
+        M4, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer, lipMethod=1,
+                                                                        local=True)
+        b = time.time()
+        M5, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer, lipMethod=2,
+                                                                        local=False)
+        c = time.time()
+        M6, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                        inputLowerBound, inputUpperBound, timer, lipMethod=2
+                                                                        , local=True)
+        d = time.time()
+        return M1, M2, M3, M4, M5, M6, [b-a, d-c]
 
 
     def calculateAdditiveTermSecondOrder(self, inputLowerBound, inputUpperBound, queryCoefficient, timer):
@@ -572,29 +557,26 @@ class LipschitzBounding:
 
         x_center = (inputLowerBound + inputUpperBound) / 2.0
 
-        curvatureMethod = [2]
+        curvatureMethod = [1]
+        lipMethod = self.lipMethod
         if self.network.isLinear == False or len(self.network.Linear) > 10:
-            curvatureMethod = [1]
+            lipMethod = 0
         if self.calculatedCurvatureConstants == []:
             m, M, lipcnt = torch.Tensor([-1]), torch.Tensor([-1]), torch.Tensor([-1])
             if 0 in curvatureMethod:
                 m, M = self.calculateCurvatureConstant(queryCoefficient, g, h)
                 # print('--', M)
             if 1 in curvatureMethod:
-                M, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h)
-                # print('--', M)
-            if 2 in curvatureMethod:
-                M, lipcnt = self.calculateCurvatureConstantGeneralLipSDP(queryCoefficient, g, h, 
-                                                                    inputLowerBound, inputUpperBound, timer, lipsdp=self.lipsdp)
-            
+                M, lipcnt = self.calculateCurvatureConstantGeneral(queryCoefficient, g, h, 
+                                                                    inputLowerBound, inputUpperBound, timer, 
+                                                                    lipMethod=lipMethod)
+
             self.calculatedCurvatureConstants.append(torch.maximum(m, M))
             self.calculatedCurvatureConstants = torch.Tensor(self.calculatedCurvatureConstants).to(self.device)
             self.LipCnt = torch.Tensor([lipcnt]).to(self.device)
 
         # because it takes the jacobian w.r.t all input output pairs
         grad_x = torch.sum(jacobian(J_c, (x_center)), axis=1).reshape(x_center.shape)
-        # print(grad_x)
-        # raise
         dialation = (inputUpperBound - inputLowerBound)/2
         dialation2 = dialation * torch.sign(grad_x)
         return grad_x, dialation, dialation2, x_center
@@ -761,8 +743,9 @@ class LipschitzBounding:
                     productMatrix = productMatrix @ weights[k]
                 if j > 0:
                     multiplier *= 0.5
+                    print("could be a bug!")
                     if (i == numberOfWeights - 1) and (A is not None):
-                        temp += np.linalg.norm(multiplier * productMatrix + A, normToUse) * ms[j - 1]
+                        temp += np.linalg.norm(multiplier * productMatrix + coef @ A, normToUse) * ms[j - 1]
                     else:
                         temp += multiplier * np.linalg.norm(productMatrix, normToUse) * ms[j - 1]
                         
@@ -770,6 +753,101 @@ class LipschitzBounding:
                     temp += multiplier * np.linalg.norm(productMatrix, normToUse)
             ms[i] = temp
         # print(ms)
+        return ms
+    
+    def calculateLocalLipLT(self, weights, alpha=None, beta=None, coef=None, A=None, B=None, normToUse=float("inf")):
+        neurons = [weights[i].shape[0] for i in range(len(weights) - 1)]
+        numberOfNeurons = sum(neurons)
+        if alpha is None or beta is None:
+            alpha = np.zeros((numberOfNeurons, 1))
+            beta = np.ones((numberOfNeurons, 1))
+        
+        numberOfWeights = len(weights)
+        # To handle closedLoop System, B only affects the final layer
+        dim_in = weights[0].shape[1]
+        dim_out = weights[-1].shape[0]
+        if B is None:
+            B = np.eye(dim_out, dim_out)
+        weights[-1] = coef @ B @ weights[-1]
+
+        ms = np.zeros(numberOfWeights, dtype=np.float64)
+        # if normToUse == np.inf:
+        #     print(numberOfWeights, self.network)
+        #     print([weights[i].shape for i in range(numberOfWeights)])
+            
+        ms[0] = np.linalg.norm(weights[0], normToUse)
+
+        # Calculating D and D'
+        neuronCounter = 0
+        D = []
+        Dprime = []
+        for i in range(numberOfWeights - 1):
+            D.append(np.diag(np.squeeze(alpha[neuronCounter: neuronCounter + neurons[i]] + beta[neuronCounter: neuronCounter + neurons[i]])/2))
+            Dprime.append(np.diag(np.squeeze(-alpha[neuronCounter: neuronCounter + neurons[i]] + beta[neuronCounter: neuronCounter + neurons[i]])/2))
+            neuronCounter += neurons[i]
+
+
+        # print(self.network)
+        # a = 1/4 * np.linalg.norm(weights[0].T @ weights[1].T @ weights[2].T, normToUse)
+        # b = 3/4 * np.linalg.norm(np.abs(weights[0].T) @ np.abs(weights[1].T) @ np.abs(weights[2].T), normToUse)
+        # c = np.linalg.norm(np.abs(weights[0].T) @ np.abs(weights[1].T) @ np.abs(weights[2].T), normToUse)
+        # print(a)
+        # print(b)
+        # print('sol: ', a + b, c)
+        # print('---------------------------------------------------------')
+        # raise
+
+        # if normToUse == float("inf"):
+        #     absWeightProd = [np.abs(weights[0])]
+        #     # print('--', absWeightProd[-1].shape)
+        #     # print(np.linalg.norm(absWeightProd[0], normToUse))
+        #     for i in range(1, numberOfWeights):
+        #         absWeightProd.append(beta[i-1] * np.abs(weights[i]) @ absWeightProd[i-1])
+        #         # print(np.linalg.norm(absWeightProd[i], normToUse))
+        #         # print('---', absWeightProd[-1].shape)
+        # print('---------------------------------------------------------')
+        # calculating m[i] 
+        for i in range(1, numberOfWeights):
+            temp = 0.
+            for j in range(i, -1, -1):
+                productMatrix = weights[i]
+                for k in range(i - 1, j - 1, -1):
+                    productMatrix = productMatrix @ D[k] @ weights[k]
+                if j > 0:
+                    # if normToUse == float("inf"):
+                    #     # print('$$', temp)
+                    #     # print((Dprime[j-1] @ absWeightProd[j-1].T).T.shape)
+                    #     # print(np.linalg.norm(Dprime[j-1] @ absWeightProd[j-1].T, normToUse))
+                    #     # print(np.linalg.norm(absWeightProd[j-1] @ Dprime[j-1].T, normToUse))
+                    #     # print(np.abs(productMatrix).shape,  (Dprime[j-1] @ absWeightProd[j-1]).shape)
+                    #     # print((np.abs(productMatrix) @ Dprime[j-1] @ absWeightProd[j-1]).shape)
+                    #     temp += np.linalg.norm((np.abs(productMatrix) @ Dprime[j-1] @ absWeightProd[j-1]), normToUse)
+                    #     # print('$$', temp)
+
+                    #     # print('+', j, '--', np.linalg.norm(np.abs(productMatrix)), np.linalg.norm((Dprime[j-1] @ absWeightProd[j-1].T).T, normToUse))
+                    #     # print('+', ms)
+                    # else:
+                        temp += np.linalg.norm(productMatrix, normToUse) * np.linalg.norm(Dprime[j-1], normToUse) * ms[j - 1]   
+                else:
+                    if (i == numberOfWeights - 1) and (A is not None):
+                        temp += np.linalg.norm((productMatrix + coef @ A), normToUse)
+                    else:
+                        temp += np.linalg.norm(productMatrix, normToUse)
+                        # print('==', np.linalg.norm(productMatrix, normToUse))
+                        # if normToUse == float("inf"):
+                        #     print('$$', temp)
+                        #     print(productMatrix.shape)
+            ms[i] = temp
+        
+        # if normToUse == float("inf"):
+        #     print(ms)
+        #     print('-----------------')
+        #     raise
+        #     print(ms)
+        #     print(1/2 * np.linalg.norm(np.abs(weights[0]).T @ np.abs(weights[1]).T, normToUse) + 
+        #           1/2 * np.linalg.norm(weights[0].T @ weights[1].T, normToUse))
+        #     print(np.linalg.norm(np.abs(weights[0]).T @ np.abs(weights[1]).T, normToUse))
+        #     raise
         return ms
 
 
@@ -865,6 +943,37 @@ class LipschitzBounding:
                                             (1 - np.tanh(upperBounds[indexes]) ** 2)[:, np.newaxis])
 
         return alpha, beta
+    
+    def calculateNaiveLip(self, weights, beta, coef, Asys, Bsys, normToUse=np.infty):
+        numLayers = len(weights)
+        if (beta == None).any():
+            beta = np.ones((numLayers - 1, 1))
+        neurons = [weights[i].shape[0] for i in range(numLayers - 1)]
+
+        # To handle closedLoop System, B only affects the final layer
+        dim_in = weights[0].shape[1]
+        dim_out = weights[-1].shape[0]
+        if Bsys is None:
+            Bsys = np.eye(dim_in, dim_out)
+
+        g = np.zeros((numLayers - 1, 1))
+        neuronCounter = 0
+        for i in range(numLayers-1):
+            g[i] = np.max(beta[neuronCounter : neuronCounter + neurons[i]])
+            neuronCounter += neurons[i]
+
+        r = np.zeros((numLayers, 1))
+        r[0] = np.linalg.norm(weights[i], ord=normToUse)
+        for i in range(1, numLayers):
+            if i < numLayers - 1:
+                r[i] = g[i] * np.linalg.norm(weights[i], ord=normToUse) * r[i - 1]
+            else:
+                if self.network.isLinear and Asys is not None:
+                    r[i] = g[i-1] * np.linalg.norm(coef @ Bsys  @ weights[i], ord=normToUse) * r[i - 1] \
+                                    + np.linalg.norm(coef @ Asys, ord=normToUse)
+                else:
+                    r[i] = g[i-1] * np.linalg.norm(weights[i], ord=normToUse) * r[i - 1]
+        return r
 
 
 
@@ -879,9 +988,9 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
     num_neurons = sum(hidden_dims)
 
     if Asys is None:
-        Asys = np.zeros((dim_in, dim_in))
+        Asys = np.zeros((dim_out, dim_in))
     if Bsys is None:
-        Bsys = np.eye(dim_in, dim_out)
+        Bsys = np.eye(dim_out, dim_out)
     # decision vars
     Lambda = cp.Variable((num_neurons, 1), nonneg=True)
     T = cp.diag(Lambda)
@@ -915,4 +1024,7 @@ def lipSDP(weights, alpha, beta, coef, Asys=None, Bsys=None, verbose=False):
     prob.solve(solver=cp.MOSEK, verbose=verbose)
 
     return np.sqrt(rho.value)[0][0]
+
+
+
 
