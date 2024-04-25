@@ -103,8 +103,6 @@ class LipschitzBounding:
                 curvcoef = torch.abs(queryCoefficient[1])
             else:
                 curvcoef = torch.abs(queryCoefficient[2])
-            
-            
             return  deltaT * (6. * torch.abs(queryCoefficient[0]) * x0bound + \
                                 curvcoef * self.calculatedCurvatureConstants)
         elif self.network.NLBench == 'B3':
@@ -142,9 +140,10 @@ class LipschitzBounding:
         without having the closed loop system
         We concider BW^L as the final layer weight.
         '''
-        calculateFinalLayerLip = True
+        calculateFinalLayerLip = False
         if self.network.isLinear == False or lipMethod == 2:
             calculateFinalLayerLip = True
+
         with torch.no_grad():
             params = list(self.network.Linear.parameters()) 
             numLayers = len(params)//2
@@ -200,7 +199,7 @@ class LipschitzBounding:
                         r[i] = torch.Tensor([self.calculateNaiveLip(temp_weight, np.ones((len(alpha), 1)), 
                                                                     cc, AA, BB, normToUse=2)[-1]]).to(self.device)
 
-                    
+                # print(lipMethod, r[-1])
                 self.pauseTime(timer, "LipSDP")
 
             S = []  
@@ -244,6 +243,7 @@ class LipschitzBounding:
                                                             None, cc, AA, BB, normToUse=np.inf)[-1]]).to(self.device))
                     self.pauseTime(timer, "LipSDP")
             
+
             for l in range(numLayers-1):
                 summationTerm += r[l]**2 * S[l]
             
@@ -366,6 +366,7 @@ class LipschitzBounding:
                                    queryCoefficient: torch.Tensor,
                                    inputLowerBound: torch.Tensor,
                                    inputUpperBound: torch.Tensor,
+                                   timer=None
                                    ):
 
         if (self.normToUse == 2 and not self.useTwoNormDilation) or self.normToUse == 1:
@@ -376,6 +377,7 @@ class LipschitzBounding:
                 # print(queryCoefficient.unsqueeze(0).cpu().numpy())
                 # print(self.network.A.cpu().numpy(), self.network.B.cpu().numpy())
                 # raise
+                self.startTime(timer, "LipSDP")
                 if self.horizon == 1:
                     lipschitzConstant = torch.Tensor([lipSDP(self.weights, alpha, beta,
                                                              queryCoefficient.unsqueeze(0).cpu().numpy(),
@@ -394,6 +396,7 @@ class LipschitzBounding:
                                               self.network.B.cpu().numpy(),
                                               verbose=self.sdpSolverVerbose)]).to(self.device)
                     lipschitzConstant = l1 * l2 ** (self.horizon - 1)
+                self.pauseTime(timer, "LipSDP")
             else:
                 lipschitzConstant = torch.from_numpy(
                     self.calculateLocalLipschitzConstantSingleBatchNumpy(self.weights, normToUse=self.normToUse))[-1].to(
@@ -452,7 +455,6 @@ class LipschitzBounding:
                     temp2 = temp1
                 else:
                     temp2 = self.network(centerPoint) @ queryCoefficient - firstOrderAdditiveTerm
-
 
                 lowerBound = torch.maximum(temp1, temp2)
                 # upperBound = self.network(centerPoint) @ queryCoefficient + additiveTerm1 + additiveTerm2
@@ -559,8 +561,9 @@ class LipschitzBounding:
 
         curvatureMethod = [1]
         lipMethod = self.lipMethod
-        if self.network.isLinear == False or len(self.network.Linear) > 10:
-            lipMethod = 0
+        if len(self.network.Linear) > 10:
+            # print('Using Naive Lip')
+            lipMethod = 1
         if self.calculatedCurvatureConstants == []:
             m, M, lipcnt = torch.Tensor([-1]), torch.Tensor([-1]), torch.Tensor([-1])
             if 0 in curvatureMethod:
@@ -598,12 +601,15 @@ class LipschitzBounding:
                         # beta = np.ones((num_neurons, 1))
                         alpha, beta = self.calculateMinMaxSlopes(None, inputLowerBound, inputUpperBound)
                         if self.horizon == 1:
+                            self.startTime(timer, "LipSDP")
                             lipschitzConstant = torch.Tensor([lipSDP(self.weights, alpha, beta,
                                                                      queryCoefficient.unsqueeze(0).cpu().numpy(),
                                                                      self.network.A.cpu().numpy(),
                                                                      self.network.B.cpu().numpy(),
                                                                      verbose=self.sdpSolverVerbose)]).to(self.device)
+                            self.pauseTime(timer, "LipSDP")
                         else:
+                            self.startTime(timer, "LipSDP")
                             l1 = torch.Tensor([lipSDP(self.weights, alpha, beta,
                                                       queryCoefficient.unsqueeze(0).cpu().numpy(),
                                                       self.network.A.cpu().numpy(),
@@ -615,11 +621,14 @@ class LipschitzBounding:
                                                       self.network.B.cpu().numpy(),
                                                       verbose=self.sdpSolverVerbose)]).to(self.device)
                             lipschitzConstant = l1 * l2 ** (self.horizon - 1)
+                            self.pauseTime(timer, "LipSDP")
                     else:
+                        self.startTime(timer, "LipSDP")
                         lipschitzConstant = torch.from_numpy(
                             self.calculateLocalLipschitzConstantSingleBatchNumpy(self.weights,
                                                                                  normToUse=self.normToUse))[-1].to(
                             self.device)
+                        self.startTime(timer, "LipSDP")
                     self.calculatedLipschitzConstants.append(lipschitzConstant)
                     self.pauseTime(timer, "lowerBound:lipschitzCalc")
                 else:
@@ -782,8 +791,13 @@ class LipschitzBounding:
         D = []
         Dprime = []
         for i in range(numberOfWeights - 1):
-            D.append(np.diag(np.squeeze(alpha[neuronCounter: neuronCounter + neurons[i]] + beta[neuronCounter: neuronCounter + neurons[i]])/2))
-            Dprime.append(np.diag(np.squeeze(-alpha[neuronCounter: neuronCounter + neurons[i]] + beta[neuronCounter: neuronCounter + neurons[i]])/2))
+            # print('code changed here!')
+            # D.append(np.diag(np.squeeze(alpha[neuronCounter: neuronCounter + neurons[i]] + 
+            #                             beta[neuronCounter: neuronCounter + neurons[i]] , axis=1)/2))
+            # Dprime.append(np.diag(np.squeeze(-alpha[neuronCounter: neuronCounter + neurons[i]] + \
+            #                                      beta[neuronCounter: neuronCounter + neurons[i]], axis=1)/2))
+            D.append(np.diag(np.squeeze(beta[neuronCounter: neuronCounter + neurons[i]] , axis=1)/2))
+            Dprime.append(np.diag(np.squeeze(beta[neuronCounter: neuronCounter + neurons[i]], axis=1)/2))
             neuronCounter += neurons[i]
 
 

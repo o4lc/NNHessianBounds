@@ -76,7 +76,7 @@ class NeuralNetwork(nn.Module):
             x1 = x[:, 1] + self.deltaT * (x[:, 1]**2 * u[:, 0] - x[:, 0])
             return torch.stack((x0, x1)).T
         elif self.NLBench == 'B2':
-            self.deltaT = 0.05
+            self.deltaT = 0.01
             x0 = x[:, 0] + self.deltaT * (x[:, 1] - x[:, 0]**3)
             x1 = x[:, 1] + self.deltaT * u[:, 0]
             return torch.stack((x0, x1)).T

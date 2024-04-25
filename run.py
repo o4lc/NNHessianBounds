@@ -257,7 +257,7 @@ def main(Method = None):
     parser.add_argument('--verboseMultiHorizon', type=bool, default=None)
     parser.add_argument('--finalHorizon', type=int, default=None, help='Number of Iterations')
     parser.add_argument('--onlyPcaDirections', type=int, default=None)
-    parser.add_argument('--lipMethod', type=int, default=None, help='Use LipSDP or Half Method')
+    parser.add_argument('--lipMethod', type=int, default=None, help='Use LipSDP or LipLT')
     args = parser.parse_args()
 
     if args.config is not None:
@@ -319,6 +319,8 @@ def main(Method = None):
     startTime = time.time()
     totalNumberOfBranches = 0
     totalLipSDPTime = 0
+    allPcaDirectionsList = []
+    allLBsList = []
     for iteration in tqdm(range(args.finalHorizon)):
         inputDataVariable = Variable(inputData, requires_grad=False)
         # @TODO: move this
@@ -406,32 +408,39 @@ def main(Method = None):
             plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsForPlotting, 
                                 calculatedLowerBoundsforpcaDirections, Method, finalIter = (iteration == (args.finalHorizon - 1)), 
                                 finalHorizon=args.finalHorizon)
+            
+        allPcaDirectionsList.append(pcaDirections)
+        allLBsList.append(calculatedLowerBoundsforpcaDirections)
     
     endTime = time.time()
     if args.fileName in ['B1', 'B2', 'B3', 'B4', 'B5', 'TORA']:
         SOTAPlotCMP(args.fileName, verisig=False, numHorizons=args.finalHorizon)
-    print('The algorithm took (s):', endTime - startTime, 'with eps =', args.eps, ', LipSDP time (s):', totalLipSDPTime)
+    print('The algorithm took (s):', endTime - startTime, 'with eps =', args.eps, ', Lipschitz time (s):', totalLipSDPTime)
     print("Total number of branches: {}".format(totalNumberOfBranches))
-    # torch.save(plottingData, "Output/reachCurv" + fileName)
-    plt.savefig("Output/reachCurv" + args.fileName + '.png')
-    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, args.splittingMethod
+    torch.save(plottingData, "Output/PlotData/" + args.fileName)
+    plt.savefig("Output/" + args.fileName + '.png')
+    plt.savefig("Output/" + args.fileName + '.pdf', dpi=600)
+    return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, args.splittingMethod, args.lipMethod
 
 
 if __name__ == '__main__':
-    Methods = ['secondOrder']
+    Methods = ['firstOrder', 'secondOrder']
     for Method in Methods:
         runTimes = []
         numberOfBrancehs = []
         lipSDPTimes = []
         for i in range(1):
-            t1, t2, t3, splittingMethod = main(Method)
+            t1, t2, t3, splittingMethod, lipMethod = main(Method)
             runTimes.append(t1)
             numberOfBrancehs.append(t2)
             lipSDPTimes.append(t3)
+        if Method == 'firstOrder':
+            lipMethod = 1
         print('-----------------------------------')
         print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
-        print('Average LipSDP time: {}, std {}'.format(np.mean(lipSDPTimes), np.std(lipSDPTimes)))
-        print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)), ', splitting method: ', splittingMethod)
+        print('Average Lipschitz time: {}, std {}'.format(np.mean(lipSDPTimes), np.std(lipSDPTimes)))
+        print('Average branches: {}, std {}'.format(np.mean(numberOfBrancehs), np.std(numberOfBrancehs)), ', splitting method: ', splittingMethod,
+                ', Lip method: ', ['navie', 'LipSDP', 'LipLT'][lipMethod])
         print(' ')
 
     if plt.get_fignums():

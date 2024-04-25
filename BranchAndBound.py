@@ -44,7 +44,7 @@ class BranchAndBound:
                                                          or (normToUseLipschitz == 2 and useTwoNormDilation)) and (boundingMethod == 'firstOrder')
         if self.calculateLipschitzBeforeNodeCreation:
             lipschitzConstant =\
-                self.lowerBoundClass.calculateLipschitzConstant(self.queryCoefficient, coordLow.unsqueeze(0), coordUp.unsqueeze(0))
+                self.lowerBoundClass.calculateLipschitzConstant(self.queryCoefficient, coordLow.unsqueeze(0), coordUp.unsqueeze(0), timer=timers)
             self.spaceNodes = [BB_node(np.infty, -np.infty, coordUp, coordLow, scoreFunction=scoreFunction,
                                        depth=0, lipschitzConstant=lipschitzConstant)]
             self.initialLipschitz = lipschitzConstant
@@ -179,7 +179,7 @@ class BranchAndBound:
                 if self.calculateLipschitzBeforeNodeCreation and depth in self.lipschitzUpdateDepths:
                     lipschitzConstant =\
                         self.lowerBoundClass.calculateLipschitzConstant(self.queryCoefficient,
-                                                                        tempLow.unsqueeze(0), tempHigh.unsqueeze(0))
+                                                                        tempLow.unsqueeze(0), tempHigh.unsqueeze(0), timer=self.timers)
 
                 self.spaceNodes.append(
                     BB_node(np.infty, -np.infty, tempHigh, tempLow, scoreFunction=self.scoreFunction,
