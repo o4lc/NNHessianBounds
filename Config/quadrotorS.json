@@ -4,7 +4,6 @@
     "verboseMultiHorizon": true,
     "verboseEssential": 0,
     "scoreFunction": "worstLowerBound",
-    "splittingMethod": "length",
     "virtualBranching": false,
     "numberOfVirtualBranches": 8,
     "maxSearchDepthLipschitzBound": 3,

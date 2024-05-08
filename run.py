@@ -50,8 +50,8 @@ def setArgs(args, configFile, Method=None):
         config = json.load(file)
 
         args.eps = [config['eps'] if args.eps is None else args.eps][0]
-        args.splittingMethod = [config['splittingMethod'] if args.splittingMethod is None else args.splittingMethod][0]
-        args.lipMethod = [config['lipMethod'] if args.lipMethod is None else args.lipMethod][0]
+        args.splittingMethod = ['length' if args.splittingMethod is None else args.splittingMethod][0]
+        args.lipMethod = [2 if args.lipMethod is None else args.lipMethod][0]
         args.verboseMultiHorizon = [config['verboseMultiHorizon'] if args.verboseMultiHorizon is None else args.verboseMultiHorizon][0]
         args.normToUseLipschitz = config['normToUseLipschitz']
         args.useSdpForLipschitzCalculation = config['useSdpForLipschitzCalculation']
@@ -415,7 +415,7 @@ def main(Method = None, args=None):
     print("Total number of branches: {}".format(totalNumberOfBranches))
     torch.save(plottingData, "Output/PlotData/" + args.fileName)
     plt.savefig("Output/" + args.fileName + '.png')
-    plt.savefig("Output/" + args.fileName + '.pdf', dpi=600)
+    # plt.savefig("Output/" + args.fileName + '.pdf', dpi=600)
     return endTime - startTime, totalNumberOfBranches, totalLipSDPTime, args.splittingMethod, args.lipMethod
 
 
@@ -429,6 +429,7 @@ if __name__ == '__main__':
     parser.add_argument('--lipMethod', type=int, default=None, help='Use LipSDP or LipLT')
     parser.add_argument('--splittingMethod', type=str, default=None, help='Splitting Method')
     parser.add_argument('--seed', type=int, default=42, help='Random Seed')
+    parser.add_argument('--iterations', type=int, default=1, help='Number of Iterations')
     args = parser.parse_args()
 
     Methods = ['secondOrder']
@@ -436,7 +437,7 @@ if __name__ == '__main__':
         runTimes = []
         numberOfBrancehs = []
         lipSDPTimes = []
-        for i in range(5):
+        for i in range(args.iterations):
             set_seed(args.seed + i)
             t1, t2, t3, splittingMethod, lipMethod = main(Method, args)
             runTimes.append(t1)

@@ -79,51 +79,7 @@ class LipschitzBounding:
     #     my_input = BoundedTensor(my_input, ptb)
     #     with torch.no_grad():
     #         lb, ub = model.compute_bounds(x=(my_input,), method="CROWN")
-    #     return lb.reshape(-1, ), ub.reshape(-1, )
-
-    def calculateNLCurvature(self, queryCoefficient, inputLowerBound, inputUpperBound):
-        # Calculate Bound on Control Signal using IBP
-        lowerBounds, upperBounds = self.propagateBoundsInNetwork(inputLowerBound[0, :].cpu().numpy(),
-                                                                    inputUpperBound[0, :].cpu().numpy(),
-                                                                    self.weights, self.biases, 
-                                                                    self.network.activation)
-        
-        ubound = torch.Tensor(np.maximum(np.abs(lowerBounds[-1]), np.abs(upperBounds[-1])))
-        # x0bound = torch.maximum(torch.abs(inputLowerBound[:, 0]), torch.abs(inputUpperBound[:, 0]))
-        # x1bound = torch.maximum(torch.abs(inputLowerBound[:, 1]), torch.abs(inputUpperBound[:, 1]))
-        x0bound = torch.maximum(torch.abs(self.coordLow[0]), torch.abs(self.coordUp[0]))
-        x1bound = torch.maximum(torch.abs(self.coordLow[1]), torch.abs(self.coordUp[1]))
-        deltaT = self.network.deltaT
-        # B1-B5
-        if self.network.NLBench == 'B1':
-            return deltaT * (2. * ubound + x1bound**2 * self.calculatedCurvatureConstants +\
-                                  4. * x1bound * self.LipCnt) * torch.abs(queryCoefficient[1])
-        elif self.network.NLBench in ['B2', 'B5']:
-            if self.network.NLBench in ['B2']:
-                curvcoef = torch.abs(queryCoefficient[1])
-            else:
-                curvcoef = torch.abs(queryCoefficient[2])
-            return  deltaT * (6. * torch.abs(queryCoefficient[0]) * x0bound + \
-                                curvcoef * self.calculatedCurvatureConstants)
-        elif self.network.NLBench == 'B3':
-            x0x1sumbound = torch.maximum(torch.abs(inputLowerBound[:, 0] + inputLowerBound[:, 1]), torch.abs(inputUpperBound[:, 0] + inputUpperBound[:, 1]))
-            termf = 4 * torch.abs(queryCoefficient[1] - queryCoefficient[0]) * \
-                        (2 * x0bound + x1bound + torch.sqrt(5 * x0bound**2 + 6*x0bound*x1bound + 2 * x1bound**2))
-            term1 = 2 * (torch.abs(queryCoefficient[1]) * self.LipCnt + torch.abs(queryCoefficient[1] - queryCoefficient[0])) \
-                        * (2 * torch.sqrt(torch.Tensor([2.])) * x0x1sumbound)
-            term2 = torch.abs(queryCoefficient[1]) * self.calculatedCurvatureConstants * (0.1 + x0x1sumbound**2)
-            term3 = 2 * (torch.abs(queryCoefficient[1]) * ubound + torch.abs(queryCoefficient[1] - queryCoefficient[0]) * x0bound)
-            return deltaT * (termf + term1 + term2 + term3)
-        elif self.network.NLBench == 'B4':
-            return deltaT * (torch.abs(queryCoefficient[2]) * self.calculatedCurvatureConstants)
-        # Others
-        elif self.network.NLBench == 'ACC':
-            return deltaT * (torch.maximum(torch.abs(queryCoefficient[2]), torch.abs(queryCoefficient[5])) + 2 * self.calculatedCurvatureConstants)
-        elif self.network.NLBench == 'TORA':
-            return deltaT * (torch.abs(queryCoefficient[1]) * 0.1 + torch.abs(queryCoefficient[3]) * self.calculatedCurvatureConstants)
-
-                                                              
-    
+    #     return lb.reshape(-1, ), ub.reshape(-1, )                                                       
 
     def calculateCurvatureConstantGeneral(self,
                                             queryCoefficient: torch.Tensor,

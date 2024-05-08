@@ -17,7 +17,7 @@
     "plotProjectionsOfHigherDims": true,
     "onlyPcaDirections": false,
     "fullLoop": false,
-    "spaceOutThreshold": 1,
+    "spaceOutThreshold": 40000,
     "nodeBranchingFactor": 2,
     "branchNodeNum": 512,
     "pgdIterNum": 0,
