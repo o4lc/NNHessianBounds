@@ -20,6 +20,14 @@ import argparse
 torch.set_printoptions(precision=8)
 warnings.filterwarnings("ignore")
 
+
+def set_seed(seed=42):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+
 def setArgs(args, configFile, Method=None):
     configFolder = "Config/"
     if configFile == None:
@@ -42,6 +50,7 @@ def setArgs(args, configFile, Method=None):
         config = json.load(file)
 
         args.eps = [config['eps'] if args.eps is None else args.eps][0]
+        args.splittingMethod = [config['splittingMethod'] if args.splittingMethod is None else args.splittingMethod][0]
         args.lipMethod = [config['lipMethod'] if args.lipMethod is None else args.lipMethod][0]
         args.verboseMultiHorizon = [config['verboseMultiHorizon'] if args.verboseMultiHorizon is None else args.verboseMultiHorizon][0]
         args.normToUseLipschitz = config['normToUseLipschitz']
@@ -64,10 +73,6 @@ def setArgs(args, configFile, Method=None):
             args.isLinear = config['isLinear']
         except:
             args.isLinear = True
-        try:
-            args.splittingMethod = config['splittingMethod']
-        except:
-            args.splittingMethod = 'length'
         if Method == None:
             args.boundingMethod = config['boundingMethod']
         else:
@@ -250,20 +255,11 @@ def solveSingleStepReachability(pcaDirections, imageData, config, iteration, dev
     return totalNumberOfBranches, timers.timers
 
 
-def main(Method = None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=None, help='Name of Benchmark')
-    parser.add_argument('--eps', type=float, default=None, help='Accuracy of Method')
-    parser.add_argument('--verboseMultiHorizon', type=bool, default=None)
-    parser.add_argument('--finalHorizon', type=int, default=None, help='Number of Iterations')
-    parser.add_argument('--onlyPcaDirections', type=int, default=None)
-    parser.add_argument('--lipMethod', type=int, default=None, help='Use LipSDP or LipLT')
-    args = parser.parse_args()
-
+def main(Method = None, args=None):
     if args.config is not None:
         configFile = args.config
         args, network, lowerCoordinate, upperCoordinate, configFileToLoad, configDict = setArgs(args, configFile, Method)
-
+    
 
     # @TODO: move this
     if args.initialZonotope and True:
@@ -424,18 +420,31 @@ def main(Method = None):
 
 
 if __name__ == '__main__':
-    Methods = ['firstOrder', 'secondOrder']
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default=None, help='Name of Benchmark')
+    parser.add_argument('--eps', type=float, default=None, help='Accuracy of Method')
+    parser.add_argument('--verboseMultiHorizon', type=bool, default=None)
+    parser.add_argument('--finalHorizon', type=int, default=None, help='Number of Iterations')
+    parser.add_argument('--onlyPcaDirections', type=int, default=None)
+    parser.add_argument('--lipMethod', type=int, default=None, help='Use LipSDP or LipLT')
+    parser.add_argument('--splittingMethod', type=str, default=None, help='Splitting Method')
+    parser.add_argument('--seed', type=int, default=42, help='Random Seed')
+    args = parser.parse_args()
+
+    Methods = ['secondOrder']
     for Method in Methods:
         runTimes = []
         numberOfBrancehs = []
         lipSDPTimes = []
-        for i in range(1):
-            t1, t2, t3, splittingMethod, lipMethod = main(Method)
+        for i in range(5):
+            set_seed(args.seed + i)
+            t1, t2, t3, splittingMethod, lipMethod = main(Method, args)
             runTimes.append(t1)
             numberOfBrancehs.append(t2)
             lipSDPTimes.append(t3)
         if Method == 'firstOrder':
             lipMethod = 1
+
         print('-----------------------------------')
         print('Average run time: {}, std {}'.format(np.mean(runTimes), np.std(runTimes)))
         print('Average Lipschitz time: {}, std {}'.format(np.mean(lipSDPTimes), np.std(lipSDPTimes)))
@@ -444,4 +453,6 @@ if __name__ == '__main__':
         print(' ')
 
     if plt.get_fignums():
-        plt.show()
+        plt.show(block=False)
+        plt.pause(1)
+        plt.close()

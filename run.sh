@@ -1,18 +1,36 @@
 #!/bin/bash
 
+# Input 1: Lip Method -> 0:Naive, 1:LipSDP, 2:LipLT
+
+ 
+# ## Fig. 6
 # echo 'Running Random Test'
-# python3 run.py --config RandomNetTanh
-# python3 run.py --config RandomNetSig
+# python3 run.py --config RandomNetTanh --eps 1e-2 --lipMethod $1
+# python3 run.py --config RandomNetSig --eps 1e-2 --lipMethod $1
 
-echo 'Running Linear Systems'
-python3 run.py --config DoubleIntegratorS --eps 1e-2 --lipMethod 0
-# python3 run.py --config quadrotorS --eps 1e-2
+# ## Fig. 8
+# echo 'Running Linear Systems'
+# python3 run.py --config DoubleIntegratorS --eps 1e-2 --lipMethod 2
+# echo '------------------'
+# python3 run.py --config quadrotorS --eps 1e-2 --lipMethod 2
 
-# echo 'Running nonLinear Systems'
-# python3 run.py --config B1
-# python3 run.py --config B2
-# python3 run.py --config B3
-# python3 run.py --config B4
-# python3 run.py --config B5
-# python3 run.py --config TORA
 
+# python3 run.py --config quadrotorS --eps 1e-3 --lipMethod 0
+# python3 run.py --config quadrotorS --eps 1e-3 --lipMethod 1
+# python3 run.py --config quadrotorS --eps 1e-3 --lipMethod 2
+# echo '------------------'
+# python3 run.py --config quadrotorS --eps 1e-2 --lipMethod 0
+# python3 run.py --config quadrotorS --eps 1e-2 --lipMethod 1
+# python3 run.py --config quadrotorS --eps 1e-2 --lipMethod 2
+
+# python3 run.py --config quadrotorS --eps 1e-1 --lipMethod 0
+# python3 run.py --config quadrotorS --eps 1e-3 --lipMethod 1 --splittingMethod 'BestLB'
+# python3 run.py --config quadrotorS --eps 1e-3 --lipMethod 1 --splittingMethod 'length'
+# python3 run.py --config quadrotorS --eps 1e-3 --lipMethod 2
+
+
+python3 run.py --config DoubleIntegratorS --eps 1e-2 --lipMethod 2 --splittingMethod 'BestLB'
+python3 run.py --config DoubleIntegratorS --eps 1e-2 --lipMethod 2 --splittingMethod 'length'
+# echo '------------------'
+python3 run.py --config DoubleIntegratorS --eps 1e-3 --lipMethod 2 --splittingMethod 'BestLB'
+python3 run.py --config DoubleIntegratorS --eps 1e-3 --lipMethod 2 --splittingMethod 'length'

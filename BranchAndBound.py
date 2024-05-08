@@ -4,7 +4,9 @@ from BranchAndBoundNode import BB_node
 from Bounding.LipschitzBound import LipschitzBounding
 from Bounding.PgdUpperBound import PgdUpperBound
 
-
+torch.manual_seed(42)
+np.random.seed(42)
+torch.cuda.manual_seed_all(42)
 
 class BranchAndBound:
     def __init__(self, coordUp=None, coordLow=None, verbose=False, verboseEssential=False, pgdStepSize=1e-3,

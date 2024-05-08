@@ -3,6 +3,9 @@ from torch.autograd import Variable
 from torch.autograd.grad_mode import no_grad
 from torch.autograd.functional import jacobian
 
+torch.manual_seed(42)
+# np.random.seed(42)
+torch.cuda.manual_seed_all(42)
 
 class PgdUpperBound:
     def __init__(self, network, numberOfInitializationPoints, numberOfPgdSteps, pgdStepSize,
