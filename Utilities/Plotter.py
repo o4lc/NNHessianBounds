@@ -105,7 +105,7 @@ def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsF
         bb = np.array(bb)
         pltp = polytope.Polytope(AA, bb)
         if Method == 'secondOrder':
-            ax = pltp.plot(ax, alpha = 0.3, color='grey', edgecolor='black')
+            ax = pltp.plot(ax, alpha = 0.3, color='grey', edgecolor='None')
         else:  
             ax = pltp.plot(ax, alpha = 0.5, color='None', edgecolor='blue')
 
@@ -121,8 +121,8 @@ def plotReachability(configFileToLoad, pcaDirections, indexToStartReadingBoundsF
                 ax.add_patch(e2)
             plt.xlabel('$x_0$')
             plt.ylabel('$x_1$')
-            custom_lines = [Line2D([0], [0], color='b', lw=2, linestyle='--'),
-                        Line2D([0], [0], color='grey', lw=2, linestyle='--')]
+            custom_lines = [Line2D([0], [0], color='b', lw=2, linestyle='-'),
+                        Line2D([0], [0], color='grey', lw=2, linestyle='-')]
             
             if 'quad' in configFileToLoad.lower() and True:
                 ax.legend(custom_lines, ['ReachLipBnB', 'Our method'], loc=4)
