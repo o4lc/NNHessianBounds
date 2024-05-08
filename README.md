@@ -1,6 +1,11 @@
-# secondOrderReachabilityBnB
+# NNHessianBounds
+
+This code is for the Experiments of "Provable Bounds on the Hessian of Neural Networks". 
+And it is based on [ReachLipBnB](https://github.com/o4lc/ReachLipBnB).
+
 
 # Installation Requirements
+
 ```
 pip install torch
 pip install cvxpy
@@ -8,8 +13,16 @@ pip install polytope
 ```
 
 # Usage
-As a simple example, you could use the `.json` files in `./Config` folder in order to run some test examples.
-In order to do so, you can set the parameter `filename` in `run.py` and the run the code:
+
+Use `run.sh` for all functions. Refer to `run.py` for the usage of all the arguments.   
 ```
-python3 run.py
+bash run.sh 
+```
+
+# Reproduce
+
+To reproduce the experiments, following template can be used.
+
+``` bash
+python3 run.py --config DoubleIntegratorS --eps 1e-2 --lipMethod 2 --iterations 5
 ```
